@@ -47,6 +47,9 @@ export interface RuntimeConfig {
   opencodeExecutable?: string
   qoderExecutable?: string
   qodercnExecutable?: string
+  cursorExecutable?: string
+  minimaxExecutable?: string
+  minimaxHome?: string
   zcodeAuthDirectory?: string
   zcodeBuiltinConfig?: string
   stateDirectory?: string
@@ -84,6 +87,7 @@ export function projectDirectory(input: string): string {
     '.codex',
     '.claude',
     '.kimi-code',
+    '.cursor',
     '.config/mimocode',
     '.local/share/mimocode',
     '.agents',

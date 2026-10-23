@@ -320,11 +320,11 @@ describe('Managed API/OpenCode accounts (explicit synthetic fixtures)', () => {
       expect(JSON.parse(native.env.OPENCODE_CONFIG_CONTENT!)).not.toHaveProperty('model')
       native.cleanup()
     }
-    const capture = vi.fn()
+    const capture = vi.fn(async () => '1.18.21')
     expect(
       await extendedCatalog('opencode', '/bin/opencode', capture, config.stateDirectory, config),
     ).toEqual([])
-    expect(capture).not.toHaveBeenCalled()
+    expect(capture).toHaveBeenCalledExactlyOnceWith(['/bin/opencode', '--version'])
     await expect(
       extendedLaunch(
         'opencode',
@@ -335,6 +335,8 @@ describe('Managed API/OpenCode accounts (explicit synthetic fixtures)', () => {
         'synthetic task',
         join(config.stateDirectory, 'native', 'one'),
         config,
+        undefined,
+        async () => '1.18.21',
       ),
     ).rejects.toThrow('没有有效账号')
     expect(resolveCredential).not.toHaveBeenCalled()
@@ -348,6 +350,8 @@ describe('Managed API/OpenCode accounts (explicit synthetic fixtures)', () => {
       'synthetic task',
       join(config.stateDirectory, 'native', 'two'),
       config,
+      undefined,
+      async () => '1.18.21',
     )
     expect(worker.env.ZHIPU_API_KEY).toBeUndefined()
     expect(readFileSync(join(worker.env.XDG_DATA_HOME!, 'opencode/auth.json'), 'utf8')).toContain(
@@ -424,6 +428,8 @@ describe('Managed API/OpenCode accounts (explicit synthetic fixtures)', () => {
         'synthetic task',
         join(config.stateDirectory, 'native', 'one'),
         config,
+        undefined,
+        async () => '1.18.21',
       )
       expect(launch.argv[0]).toBe(process.execPath)
       expect(launch.argv[1]).toMatch(/private-launch[.]mjs$/)

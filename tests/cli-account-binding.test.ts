@@ -26,7 +26,7 @@ vi.mock('node:os', async (original) => ({
 }))
 vi.mock('../src/host/adapters.ts', () => ({
   resolveCliExecutable: vi.fn(async (cli: string) => `/synthetic/${cli}`),
-  captureCatalogMetadata: vi.fn(async () => JSON.stringify(fixture.status)),
+  captureCatalogMetadata: vi.fn(async (_backend, _config, argv: string[]) => argv.at(-1) === '--version' ? '1.18.21' : JSON.stringify(fixture.status)),
   catalogFor: vi.fn(),
   validatePreference: vi.fn(),
 }))
@@ -222,7 +222,7 @@ function agy(sub = 'own-agy', refresh = 'synthetic-refresh') {
     identity: { state: 'authenticated', authMethod: 'oauth', verification: 'local' },
     principalHash: createHash('sha256').update(`google:${sub}`).digest('hex'),
   }
-  write(join(fixture.home, '.gemini/jetski-standalone-oauth-token'), {
+  write(join(fixture.home, '.gemini/antigravity-cli/antigravity-oauth-token'), {
     auth_method: 'consumer',
     token: { access_token: jwt(sub), refresh_token: refresh, expiry: '2099-01-01T00:00:00Z' },
     id_token: jwt(sub),
@@ -308,6 +308,14 @@ function own(cli: CliId) {
     write(join(fixture.home, '.local/share/opencode/auth.json'), {
       own: { type: 'api', key: 'synthetic-opencode-key' },
     })
+  else if (cli === 'cursor') fixture.status = { status: 'authenticated', isAuthenticated: true, hasAccessToken: true, hasRefreshToken: true, userInfo: { userId: 101 } }
+  else if (cli === 'minimax') {
+    const root = join(fixture.home, '.minimax'), directory = join(root, 'auth/prod/cn/mcode-public')
+    const common = { clientId: 'mcode-public', audience: 'agent-backend', scopes: ['agent.default'], generation: 1, expiresAtMs: 4e12 }
+    const key = 'com.minimax.mcode.oauth.prod.cn\0' + createHash('sha256').update(join(root, 'auth') + '\0mcode-public').digest('base64url')
+    write(join(directory, 'auth-state.json'), { schemaVersion: 2, storeKind: 'file', status: 'authenticated', buildEnv: 'prod', region: 'cn', ...common })
+    write(join(directory, 'auth.json'), { schemaVersion: 1, records: { [key]: { schemaVersion: 1, tokenType: 'Bearer', accessToken: 'synthetic-access', refreshToken: 'synthetic-refresh', subject: 'synthetic-minimax-user', ...common } } })
+  }
   else if (cli === 'qoder') vi.stubEnv('QODER_PERSONAL_ACCESS_TOKEN', 'synthetic-own-qoder-pat')
   else if (cli === 'qodercn') vi.stubEnv('QODERCN_PERSONAL_ACCESS_TOKEN', 'synthetic-own-qodercn-pat')
   else if (cli === 'zcode') zcode()
@@ -389,8 +397,30 @@ it('keeps OAuth rotation stable, but changes on account switch and rejects logou
   expect(await run('antigravity')).toBe(first)
   agy('different-user')
   expect(await run('antigravity')).not.toBe(first)
-  rmSync(join(fixture.home, '.gemini/jetski-standalone-oauth-token'))
+  rmSync(join(fixture.home, '.gemini/antigravity-cli/antigravity-oauth-token'))
   fixture.windowsAgy = undefined
+  await expect(run('antigravity')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
+})
+
+it('binds only the current AGY file and never falls back to stale jetski material', async () => {
+  if (process.platform === 'win32') return // Native Credential Manager is covered separately.
+  agy('current-account')
+  const first = await run('antigravity')
+  write(join(fixture.home, '.gemini/jetski-standalone-oauth-token'), {
+    auth_method: 'consumer',
+    token: { access_token: jwt('legacy-account'), refresh_token: 'synthetic-legacy-refresh' },
+    id_token: jwt('legacy-account'),
+  })
+  expect(await run('antigravity')).toBe(first)
+  write(join(fixture.home, '.gemini/antigravity-cli/antigravity-oauth-token'), {
+    auth_method: 'consumer',
+    token: { access_token: jwt('current-account'), refresh_token: 'synthetic-rotated-refresh' },
+    id_token: jwt('current-account'),
+  })
+  expect(await run('antigravity')).toBe(first)
+  write(join(fixture.home, '.gemini/antigravity-cli/antigravity-oauth-token'), {}, true)
+  await expect(run('antigravity')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
+  rmSync(join(fixture.home, '.gemini/antigravity-cli/antigravity-oauth-token'))
   await expect(run('antigravity')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
 })
 

@@ -38,6 +38,8 @@ export const forkSupport: Partial<Record<CliId, { latest: boolean; earlier: bool
 
 export const noForkReason: Partial<Record<CliId, string>> = {
   antigravity: '当前 CLI 不支持会话分支：Antigravity 未公开原生分支接口',
+  cursor: 'Cursor Agent 原生会话分支尚未验证',
+  minimax: 'MiniMax Code 原生会话分支尚未验证',
   hermes: '当前 CLI 不支持会话分支：Hermes 原生分支会结束原会话',
   grok: '当前 CLI 不支持会话分支：已确认 --fork-session，但当前 ACP 的 x.ai/session/fork 参数和回执尚未核实',
   omp: '当前 CLI 不支持会话分支：RPC 只有从用户条目前分支的 branch，未确认包含最新完成轮的 clone 接口',

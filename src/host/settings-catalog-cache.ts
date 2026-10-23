@@ -27,15 +27,18 @@ const schema = z
       .object({
         cli: z.enum(CLI_IDS),
         notice: z.string().max(8192),
+        transport: z.literal('opencode-http-v2').optional(),
+        allowedModes: z.array(z.enum(['plan', 'accept-edits'])).optional(),
         models: z
           .array(
             z
               .object({
-                id: text,
-                label: text,
+                id: z.string().min(1).max(16384),
+                label: z.string().min(1).max(8192),
                 efforts: z.array(z.enum(EFFORTS)).max(EFFORTS.length).optional(),
                 variants: z.partialRecord(z.enum(EFFORTS), text).optional(),
                 cost: z.enum(['free', 'paid', 'unknown']).optional(),
+                opaqueIdentity: z.boolean().optional(),
               })
               .strict(),
           )
@@ -220,8 +223,13 @@ export class SettingsCatalogCache {
       this.ready.delete(key)
       const result = await input.discover()
       signal.throwIfAborted()
-      if (this.revision(cli) !== revision || binding !== undefined && result.binding !== binding || result.catalog.cli !== cli || !result.catalog.models.length)
+      const diagnostic = cli === 'opencode' && !!result.catalog.executionUnavailable && result.catalog.models.length === 0
+      if (this.revision(cli) !== revision || binding !== undefined && result.binding !== binding || result.catalog.cli !== cli || !result.catalog.models.length && !diagnostic)
         throw new Error('模型来源已变化，请刷新重试')
+      // Native v2 diagnostics are neither saved choices nor execution authority.
+      // Return the fresh notice without persisting it in the selectable-model schema.
+      if (diagnostic) { this.failed.delete(key); return structuredClone(result) }
+      if (result.catalog.executionUnavailable) throw new Error('当前目录仅作诊断，不能缓存为可执行模型')
       this.remember(input.project, result, revision)
       return structuredClone(result)
     } catch (error) {

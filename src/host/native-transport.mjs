@@ -10,6 +10,9 @@ const steerRejected = () => Object.assign(new Error('原生引导通路已关闭
 
 /** One owned native process; descendants remain inside the Host's enclosing process range. */
 export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) {
+  // New ACP integrations do not need raw wire telemetry. Keep credentials/errors
+  // out of persisted native records and stderr diagnostics, even on early failure.
+  const privateWire = ['cursor', 'minimax'].includes(config.cli) || config.cli === 'opencode' && config.transport === 'opencode-http-v2'
   const children = new Set()
   const controls = new Set()
   const steering = new Map()
@@ -52,6 +55,7 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
       output({ type: 'event', event })
     },
     native(record) {
+      if (privateWire) return
       output({ type: 'native', record })
     },
     registerSteer(handler) {
@@ -135,8 +139,10 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
         total += chunk.length
         if (total > config.maxRunBytes) return fail(failure('Native stream exceeds run limit'))
         if (isError) {
-          stderr = (stderr + chunk.toString('utf8')).slice(-8192)
-          onNativeStderr(chunk)
+          if (!privateWire) {
+            stderr = (stderr + chunk.toString('utf8')).slice(-8192)
+            onNativeStderr(chunk)
+          }
         }
         try {
           Promise.resolve(callback?.(chunk)).catch(fail)
@@ -227,7 +233,7 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
           status: 'ERROR',
           response,
           resultScope: 'run',
-          error: String(error.message ?? error).slice(0, 4096),
+          error: config.transport === 'opencode-http-v2' ? (signal?.aborted ? '任务已停止' : 'OpenCode v2 原生任务未完成，请核对自有会话状态') : String(error.message ?? error).slice(0, 4096),
         }
       if (!result) result = { type: 'result', status: 'ERROR', response, resultScope: 'run', error: '原生协议结束但没有轮次终态' }
       if (!sessionId && !config.forkOperation && result.status !== 'ERROR') throw failure('Native result has no session')

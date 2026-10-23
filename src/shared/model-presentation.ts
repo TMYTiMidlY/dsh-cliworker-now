@@ -44,6 +44,7 @@ export function displayModelName(value: string | Preference | ModelChoice): stri
   // legal native name, so strip annotations only from the catalog's label.
   if (typeof value === 'string') return visibleModelName(value) || '模型'
   if ('model' in value) return displayModelName(modelName(value))
+  if (value.opaqueIdentity) return value.label?.trim() || value.id
   const label = withoutAnnotations(visibleModelName(value.label ?? '')).replace(
     /^Claude 官方模型别名\s+/u,
     '',
@@ -54,7 +55,7 @@ export function displayModelName(value: string | Preference | ModelChoice): stri
 const selectedRoute = (model: ModelChoice, selected?: string) =>
   !!selected && (model.id === selected || Object.values(model.variants ?? {}).includes(selected))
 const freeRank = (model: ModelChoice) => (model.cost === 'free' ? 0 : 1)
-const normalizedId = (model: ModelChoice) => nativeModelName(model.id).trim().toLowerCase()
+const normalizedId = (model: ModelChoice) => model.opaqueIdentity ? `opaque:${model.id}` : nativeModelName(model.id).trim().toLowerCase()
 
 /**
  * Present an already-filtered native catalog. Keep the complete raw catalog for

@@ -45,6 +45,15 @@ it('discovers once per Host and persists choices; unchanged data on restart is n
   expect(readFileSync(f.file(), 'utf8')).toBe(text)
   if (process.platform !== 'win32') expect(statSync(f.file()).mode & 0o777).toBe(0o600)
 })
+it('returns fresh v2 diagnostic notices without selectable choices, cache files or generic login errors', async () => {
+  const f = fixture(), diagnostic: Catalog = { cli: 'opencode', models: [], notice: 'Synthetic v2 metadata only', executionUnavailable: 'Synthetic v2 execution code still to implement', nativeModelCount: 4 }
+  const input = { ...f.input, cli: 'opencode' as const, discover: vi.fn(async () => ({ catalog: diagnostic, binding: 'synthetic-binding' })) }
+  expect((await f.cache.get(input)).catalog).toEqual(diagnostic)
+  expect((await f.cache.get(input)).catalog).toEqual(diagnostic)
+  expect(input.discover).toHaveBeenCalledTimes(2)
+  expect(f.cache.displayBinding(f.root, 'opencode')).toBeUndefined()
+  expect(readdirSync(join(f.root, 'settings-catalogs'))).toEqual([])
+})
 it('exposes only this Host verified display binding, never a previous disk-only identity', async () => {
   const f = fixture()
   expect(f.cache.displayBinding(f.root, 'codex')).toBeUndefined()

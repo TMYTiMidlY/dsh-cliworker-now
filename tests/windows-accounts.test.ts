@@ -6,6 +6,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { localAccountIdentity } from '../src/host/account-identity.ts'
 import { readCodexOwnAccountSource } from '../src/host/cli-account-binding.ts'
 import { readKimiAccount } from '../src/host/kimi-accounts.ts'
+import { projectCursorStatus } from '../src/host/cursor-accounts.ts'
+import { minimaxExecutable } from '../src/host/minimax-accounts.ts'
 import { mimoConfigurationPaths, readMimoAccount } from '../src/host/mimo-configuration.ts'
 import { prepareMimoAccountTerminal } from '../src/host/first-party-account-context.ts'
 import { claudeManagedSettingsPath, readFirstPartyModelSources } from '../src/host/first-party-models.ts'
@@ -21,6 +23,10 @@ import { CLI_IDS, type CliId } from '../src/shared/types.ts'
 // generation, symlink privilege, or POSIX permission-bit assertion is required.
 let root: string, project: string, config: RuntimeConfig
 let qoderAccountInfo: { userId: string; email: string } | undefined
+// Cursor authenticates from native process status, not a portable token file.
+// MiniMax Windows credential-file support is deliberately not implemented yet.
+// Neither may be fabricated as a successful member of this file-source matrix.
+const fileSourceClis = CLI_IDS.filter(cli => cli !== 'cursor' && cli !== 'minimax')
 const signal = () => new AbortController().signal
 const jwt = (sub: string, extra: Record<string, unknown> = {}) =>
   `e30.${Buffer.from(JSON.stringify({ sub, ...extra })).toString('base64url')}.synthetic`
@@ -42,7 +48,7 @@ beforeEach(async () => {
   // operating system did not accept the isolated home environment.
   expect(await realpath(homedir())).toBe(root)
   for (const key of Object.keys(process.env))
-    if (/ANTHROPIC|CLAUDE_CODE_(?:OAUTH|USE_|API)|AWS_|GOOGLE_|CLOUD_ML|API_KEY|BEARER_TOKEN|^QODER(?:CN|CLI)?_/.test(key))
+    if (/ANTHROPIC|CLAUDE_CODE_(?:OAUTH|USE_|API)|AWS_|GOOGLE_|CLOUD_ML|API_KEY|BEARER_TOKEN|^KIMI_MODEL_|^QODER(?:CN|CLI)?_/.test(key))
       vi.stubEnv(key, '')
   for (const key of [
     'OPENAI_API_KEY',
@@ -172,7 +178,7 @@ async function ownAccount(cli: CliId, identity = 'own'): Promise<string> {
   const key = `synthetic-${cli}-${identity}`
   let path: string
   if (cli === 'antigravity') {
-    path = join(root, '.gemini/jetski-standalone-oauth-token')
+    path = join(root, '.gemini/antigravity-cli/antigravity-oauth-token')
     await write(path, {
       auth_method: 'consumer',
       token: { access_token: key, refresh_token: 'synthetic-refresh', expiry: '2099-01-01T00:00:00Z' },
@@ -254,7 +260,7 @@ async function ownAccount(cli: CliId, identity = 'own'): Promise<string> {
 }
 
 describe('Windows account source contract on the real platform filesystem (synthetic only)', () => {
-  it.each(CLI_IDS)(
+  it.each(fileSourceClis)(
     '%s does not infer login from Harness, another CLI, or ambient provider keys',
     async (cli) => {
       await write(join(root, '.dsh/credentials.json'), { key: 'synthetic-host-key' })
@@ -266,7 +272,7 @@ describe('Windows account source contract on the real platform filesystem (synth
     },
   )
 
-  it.each(CLI_IDS)('%s reads its own live source and clears login after native logout', async (cli) => {
+  it.each(fileSourceClis)('%s reads its own live source and clears login after native logout', async (cli) => {
     expect(await configured(cli)).toBe(false)
     const path = await ownAccount(cli)
     const before = await readFile(path)
@@ -276,6 +282,29 @@ describe('Windows account source contract on the real platform filesystem (synth
     expect(await configured(cli)).toBe(true)
     await rm(path)
     expect(await configured(cli)).toBe(false)
+  })
+
+  it('Cursor consumes synthetic native numeric status, not an invented Windows credential file', () => {
+    expect(CLI_IDS).toContain('cursor')
+    const status = (userId: number) => ({ status: 'authenticated', isAuthenticated: true,
+      hasAccessToken: true, hasRefreshToken: true, userInfo: { userId, email: 'synthetic@example.invalid' } })
+    const first = projectCursorStatus(status(101)), switched = projectCursorStatus(status(202))
+    expect(first.identity.state).toBe('authenticated')
+    expect(switched.identity.state).toBe('authenticated')
+    expect(switched.principal).not.toBe(first.principal)
+    const loggedOut = projectCursorStatus({ status: 'unauthenticated', isAuthenticated: false,
+      hasAccessToken: false, hasRefreshToken: false })
+    expect(loggedOut.principal).toBeUndefined()
+    expect(loggedOut.identity.state).not.toBe('authenticated')
+    expect(JSON.stringify(first)).not.toContain('userId')
+  })
+
+  it('MiniMax Windows discovery requires an explicit native entry without pretending file authentication is accepted', () => {
+    expect(CLI_IDS).toContain('minimax')
+    expect(fileSourceClis).not.toContain('minimax')
+    expect(() => minimaxExecutable(undefined, 'win32')).toThrow('显式配置')
+    expect(() => minimaxExecutable('C:\\MiniMax\\agent.exe', 'win32')).toThrow('原生 mcode')
+    expect(minimaxExecutable('C:\\MiniMax\\mcode.exe', 'win32')).toBe('C:\\MiniMax\\mcode.exe')
   })
 
   it('MiMo Windows native path stays live through logout and external switch; cleanup never restores a copy', async () => {

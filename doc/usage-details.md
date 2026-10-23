@@ -229,15 +229,19 @@ Windows 的原生授权网址会完整打开一次，也可在终端中点击或
 
 账号发现和执行绑定同一来源；设置页保存选型、新任务、排队出队和续聊都会重新核对账号、模型与强度；子对话改选先按保存目录记录偏好，实际发送时再核验。换号或退出会阻止旧任务启动，历史任务换号后需新建任务；升级前未记录账号绑定的历史任务也需新建，原对话保留。插件不读取其他 CLI 的凭据，也不继承 Harness API 凭据；旧 `zaiCredentialRef` 配置兼容读取但不生效。旧派生认证快照会按当前自身来源重建，原生账号、历史会话和偏好保留；失效偏好需重新选择。
 
-Antigravity 使用自身原生登录和实时 `agy models` 目录，只展示原生返回的模型及强度变体。Windows 使用原生 Credential Manager 中当前交互式用户的账号，仅返回安全身份摘要。账号读取先完成，模型查询的等待或失败不会把已登录账号改为未登录。重复的在途账号读取会合并，后续刷新与执行授权仍读取当前账号。
+Antigravity 使用自身原生登录和实时 `agy models` 目录，只展示原生返回的模型及强度变体。非 Windows 的文件认证统一读取当前 home 下的 `~/.gemini/antigravity-cli/antigravity-oauth-token`，状态、模型预检和任务账号绑定使用同一来源；不复制或迁移 token，也不回退旧的 `~/.gemini/jetski-standalone-oauth-token`，避免旧账号与 CLI 实际来源不一致。依赖旧文件或系统密钥环的其他 CLI 版本不能由此推定兼容。Windows 使用原生 Credential Manager 中当前交互式用户的账号，仅返回安全身份摘要。账号读取先完成，模型查询的等待或失败不会把已登录账号改为未登录。重复的在途账号读取会合并，后续刷新与执行授权仍读取当前账号。本地材料可读不代表远端模型授权已通过。
 
 Claude 会显示当前来源：自身配置的本地代理可达时使用代理，代理关闭时使用原生官方账号。代理认证或模型查询失败会明确报错，不自动换号。官方登录／退出只作用于官方账号，保留代理设置；任务启动前固定来源，不在运行中切换。官方 OAuth 模型需同时通过原生身份、模型能力和剩余额度核验；缺少证据时不放行。
 
-当前账号范围边界：Kimi 原生 managed OAuth 使用自身模型别名、认证目录和可确认的套餐额度；额度为空、未知或耗尽时提示检查账号。其他未核验的 Kimi OAuth 模式及 OpenCode OAuth 暂不开放派遣。Claude 自身设置中的 API Key／Bearer Token、Kimi 自身 API 配置、MiMo 原生网页登录写入的自身 API 认证，以及可核对的本地配置，按账号列表筛选；保留网页登录附带的官方服务地址。Codex 支持已核验的官方文件账号路径，keyring 或自定义路由缺少范围证据时不放行。MiMo 目前只接受可核验的本地配置，文件／环境插值和远程组织配置需先移除。OpenCode 原生 OAuth 写回缺少账号版本保护，暂只开放自身 API 配置。
+当前账号范围边界：Kimi 原生 managed OAuth 使用自身模型别名、认证目录和可确认的套餐额度；额度为空、未知或耗尽时提示检查账号。其他未核验的 Kimi OAuth 模式及 OpenCode v1 OAuth 暂不开放派遣。Claude 自身设置中的 API Key／Bearer Token、Kimi 自身 API 配置、MiMo 原生网页登录写入的自身 API 认证，以及可核对的本地配置，按账号列表筛选；保留网页登录附带的官方服务地址。Codex 支持已核验的官方文件账号路径，keyring 或自定义路由缺少范围证据时不放行。MiMo 目前只接受可核验的本地配置，文件／环境插值和远程组织配置需先移除。上述 OpenCode 可执行范围是 v1；v1 原生 OAuth 写回缺少账号版本保护，暂只开放自身 API 配置。v2 不读取旧 auth.json 或创建隔离 OPENCODE_DB：仅使用现有受信 Linux 服务，核验私有记录、进程/PID/版本与固定回环来源，再开放显式 `read_only` 纯文本任务。只接受当前首个 key/oauth credential 来源，不把环境、外部或 needs_auth 来源当授权；状态“已配置”和原生 enabled 模型不等于远端访问已验证。精确 provider/id/variant、原生首项默认 agent 与全工具 DENY 规则固定在插件自有会话中，不复制旧 ALLOW；不提供文件工具、编辑、shell、MCP、附件、分支、实时引导或会话内模型切换。模型变化需新任务，不能将 v1 或用户原生历史迁为 v2 owned 会话。
+
+v2 每轮只提交一次耐久 input ID；ACK 丢失先核对同 ID 的 inbox、用户消息和耐久日志，取消后也不重发。日志只显示关联本轮的最终文本分段，不伪装实时 delta 或补造成本/令牌。未知的异步准入可能在一次空闲检查之后晚到：只有先证明该输入已准入，后续同 PID wait、active/inbox 与日志核对才能确认停止。已知准入但缺模型终态或最终正文时，模型结果仍不确定，不自动续跑；无可信清理证据、桥被 kill、PID 更换或未确认策略则持久隔离。明确停止已隔离任务只清理原服务/marker 的自身输入，不要求当前账号仍相同，不重发、不杀共享服务、不删历史。没有远端会话的 pre-spawn 不确定记录、GET 404 或新服务的空闲不自动解除隔离，仍需人工核查。此阶段只证明受控纯文本前台流程，不保证任意原生插件或 detached OS 作业结束。
+
+正常服务重启不破坏已完成会话的稳定 credential 来源绑定；每轮仍另固定服务 epoch。外部原生界面若向 owned 会话插入或修改历史，即便现已空闲也拒绝继续使用该历史，不删除外来内容。真实 DSH 子会话仍创建并投影回复，但不会分配工具/MCP lease。账号终端仅由用户主动打开，不注入登录/退出、不自动启动服务、不读取或复制凭据数据库；服务密码只走 Host 私有环境和回环认证，不进入 Gateway、请求文件或 ledger。当前验收为实际 Host/bridge/DSH 子会话对合成 v2 服务；真实 OpenCode 服务、模型、GUI 与非 Linux 未验收。
 
 Codex 能读取模型但当前额度耗尽时，设置明确提示等待额度恢复；认证失效或访问被拒绝单独提示检查登录。两者都保留现有账号和项目偏好，不把原生模型能力当成当前可调用权限。
 
-Kimi 已有有效或可续期的自身原生登录时显示“已登录”及可确认的简短账号 ID；原生未保存邮箱或昵称时不编造，点击“管理登录”打开原生终端；切换账号由用户输入 `/logout` 后再输入 `/login`。账号终端使用独立空目录，不加载用户项目 MCP；原生若显示 Trust 提示，由用户自行确认。只有提供商配置而没有对应令牌时显示未登录，不会自动退出原账号。
+Kimi 已有有效或可续期的自身原生登录时显示“已登录”及可确认的简短账号 ID；原生未保存邮箱或昵称时不编造，点击“管理登录”打开原生终端；切换账号由用户输入 `/logout` 后再输入 `/login`。账号终端使用独立空目录，不加载用户项目 MCP；原生若显示 Trust 提示，由用户自行确认。只有 managed OAuth 引用而没有对应令牌时才显示未登录，不会自动退出原账号。自身 API 配置则保持“已配置”，不要求另有 OAuth 令牌：Kimi 2.2 的内联密钥、对应提供商类型的私有 env、明确的 apiKeyEnv 引用按同一原生顺序解析。显式引用缺值显示配置未就绪，冲突或未支持的来源不用于绑定，不能回退另一把密钥。任务仅传选定模型声明的必要环境值，账号终端仅传自身明确引用；不复制整个宿主环境，也不把值写入 argv、公开记录或桥请求。KIMI_MODEL_* 全局覆盖暂不支持。此次当前本地 API 配置读取成功，不代表已复现用户此前的界面误报或确认远端调用权限。
 
 Hermes 首次明确打开登录设置后使用插件内独立原生账号目录，自动导入关闭，状态、模型、任务统一绑定该目录；之后退出不会回退到全局旧账号。原全局账号和历史保留，Host 不把其他 CLI 导入凭据作为自身登录证据，不注入 Harness 认证；原生进程按自身权限运行。现有官方安装的已选依赖环境可直接复用，账号操作不触发重新安装。
 
@@ -444,3 +448,24 @@ pnpm spec:check
 ```
 
 Codex 中选择 `openspec-propose` 技能准备方案，再用 `openspec-apply-change` 实施；完成验证后用 `openspec-archive-change` 归档。具体命令、文档分工及其他 CLI 的接入见 [OpenSpec 开发指南](openspec.md)。OpenSpec 是本仓库的开发工具，插件使用者无需安装。
+
+## Fork 新增：Cursor Agent
+
+- 规范 ID 为 `cursor`；别名 `cursor-agent`、`cursor agent`、`cursor CLI`。泛称 `agent` 不路由到 Cursor，不启动 Cursor IDE。
+- POSIX 默认使用 `~/.local/bin/cursor-agent`，高级路径设置和部署字段 `cursorExecutable` 可覆盖。Windows 不做 IDE/通用 agent 自动发现，仅接受显式的 cursor-agent CLI-native 文件入口；Windows 实际兼容性尚未验收。
+- 账号只通过原生 `status --format json` 查询。仅投影邮箱与安全状态；令牌存在而 userInfo 暂不可用时显示已配置，但稳定账号绑定前不能启动任务。API key / `CURSOR_API_ENDPOINT` 自定义路由暂不支持，不复制 token 或使用其他 CLI 登录态。
+- 模型通过 ACP v1 的 `initialize` 与 `session/new` 查询，不发送 prompt。此查询可能在 Cursor 留下一个空原生会话；插件不会删除用户历史。参数化模型 ID（包括 `default[]`、含 context/reasoning/fast 的括号）作为整体保留，不拆分或推断思考强度，仅提供 default。
+- 执行使用 `cursor-acp-v1`：prompt 前确认 model 与原生 mode（编辑为 `agent`，规划为 `plan`）；续聊只加载保存的原生 session。额外权限请求拒绝，不加 `--force` / `--yolo`。
+- 暂不支持 DSH 工具/MCP 注入、附件、会话分支与实时引导；不声称 Cursor 广告的 image 能力已完成宿主附件接入。未知统计不借用其他 CLI 数据。
+- 当前仅完成源码与模拟协议回归；真实模型生成、续聊、取消、浏览器和 Windows 验收需另行执行。
+
+## Fork 新增：MiniMax Code（mmx / mcode）
+
+- 规范 ID `minimax`，与 Xiaomi MiMo 完全独立；别名 `minimax code`、`mmx`、`mcode`。默认 CLI 入口为 `~/.minimax-code/bin/mcode`，可通过路径设置或 `minimaxExecutable` 覆盖；Windows 仅接受显式 mcode CLI 入口，未实机验收。
+- 自身数据根按显式 `minimaxHome` > 当前非空 `MINIMAX_DATA_DIR` > 当前非空 `MAVIS_DATA_DIR` > `~/.minimax` 选取。区域遵循当前明确原生区域、prod 原生偏好及唯一有效状态；不扫描或选择 shell 中其他账号包装目录。
+- 首阶段只支持标准 prod/cn、prod/en 的原生 file token_plan OAuth。当前 API、自定义默认路由、提供商或模型级请求头/服务/认证覆盖明确拒绝。原生配置指纹与文件版本参与绑定，保留 OAuth 文件不能授权切换后的 API/custom 来源。原生 provider list 中默认存在 OAuth 行不证明登录，API provider 列表和遮罩 key 不作为当前支持范围。
+- 凭据文件、状态及必要身份缓存采用有界、私有、no-follow 一致性读取；核对 client、audience、scope、generation、region/env。仅使用稳定 subject/accountId 或与当前 token 指纹精确匹配的 verified realUserID。缓存单独不能证明登录；缺少稳定主体、等待原生续期或有效期少于一分钟时保留准确的已配置/待续期状态，不猜身份或自行刷新。
+- 模型通过认证后的 ACP v1 initialize/session-new 读取，保留原生 `m:<encoded provider>:<encoded model>:u` / `:v:<variant>`，包括原生空 variant。仅当前受支持的 minimax provider 进入选项；切换每个模型后重新读取 thinkingEffort，不能把旧模型强度搬给新模型。查询不发 prompt，可能留下空原生会话，不删除用户历史；取消/范围退出和账号来源一致性未确认不发布目录。
+- 任务使用 `minimax-acp-v1`。prompt 前确认模型、强度、进程级 `permissionMode=default`（Ask）及 default 会话模式；不会切换 auto/bypassPermissions。Plan 的 next_prompt 延迟转移暂不开放；附件、工具/MCP 注入、分支、实时引导均关闭。额外客户端权限/文件/终端/问题请求拒绝。续聊保留原 cwd 与精确会话 ID，取消先通知原生再等待进程范围退出。
+- Cursor 与 MiniMax 新 ACP 通路仅保存解析后的公开过程，不转发原始 RPC/error/auth 记录或原始 stderr；其他 CLI 的既有遥测通路不变。未知用量不补零。
+- 当前实际零 prompt 探测只确认原生初始化，默认来源 session/new 返回原生 `mcode login` 要求。没有已认证目录、真实生成/续聊/停止、浏览器或 Windows 验收；不能称其为仅插件识别问题，也不会自动换到其他账号绕过。

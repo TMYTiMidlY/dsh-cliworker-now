@@ -25,6 +25,8 @@ export const NATIVE_TRANSPORTS = {
   opencode: 'opencode-http-v1',
   qoder: 'qoder-acp-v1',
   qodercn: 'qodercn-acp-v1',
+  cursor: 'cursor-acp-v1',
+  minimax: 'minimax-acp-v1',
 } as const
 export function transportFor(cli: CliId): string {
   if (cli === 'harness') throw new Error('Harness CLI 已移除')
@@ -33,7 +35,7 @@ export function transportFor(cli: CliId): string {
 export function usesNativeBridge(worker: Pick<Worker, 'transport' | 'preference'>): boolean {
   const cli = worker.preference.cli ?? 'antigravity'
   if (!worker.transport || worker.transport === 'legacy') return false
-  if (worker.transport !== transportFor(cli)) throw new Error('此任务使用未知通信协议，请核对插件版本')
+  if (worker.transport !== transportFor(cli) && !(cli === 'opencode' && worker.transport === 'opencode-http-v2')) throw new Error('此任务使用未知通信协议，请核对插件版本')
   return cli !== 'pi' && cli !== 'omp'
 }
 function bridgePath(): string {
@@ -48,6 +50,8 @@ export async function prepareNativeWorker<
   launch: T,
   input: {
     cli: CliId
+    transport?: string
+    opencodeV2?: { root: string; workerId: string; runId: string; sessionId: string; epoch: string; admissionTimeoutMs?: number }
     project: string
     preference: Preference
     mode: TaskMode
@@ -70,7 +74,7 @@ export async function prepareNativeWorker<
   let control: Awaited<ReturnType<typeof createNativeStopControl>> | undefined
   let guidance: Awaited<ReturnType<typeof createNativeGuidanceControl>> | undefined
   try {
-    control = await createNativeStopControl(join(directory, 'stop'))
+    control = await createNativeStopControl(join(directory, 'stop'), input.transport === 'opencode-http-v2' ? { timeoutMs: 12000 } : {})
     if (['codex', 'hermes'].includes(input.cli)) guidance = await createNativeGuidanceControl(join(directory, 'control'))
     const activeControl = control
     const native =

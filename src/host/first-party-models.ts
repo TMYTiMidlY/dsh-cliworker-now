@@ -23,6 +23,7 @@ import {
 import { metadataFileFingerprint, NativeCapabilityCache } from './native-capability-cache.ts'
 import { readKimiOAuthModelSources, probeKimiOAuthModels } from './kimi-oauth-models.ts'
 import { readKimiOwnToken } from './kimi-accounts.ts'
+import { assertKimiEnvironment, resolveKimiCredential, KimiCredentialConfigurationError } from './kimi-credentials.ts'
 import { ProcessCleanupUnconfirmedError } from './process.ts'
 import {
   assertMimoConfiguration,
@@ -133,6 +134,7 @@ export function claudeManagedSettingsPath(
 
 /** Disable inherited SDK credentials and cross-CLI plugin imports in the native MiMo provider resolver. */
 export function firstPartyEnvironment(cli: string): Record<string, string> {
+  if (cli === 'kimi') assertKimiEnvironment()
   if (cli !== 'mimo') return {}
   return {
     MIMOCODE_DISABLE_PROVIDER_ENV: '1',
@@ -158,9 +160,11 @@ export async function assertFirstPartyConfiguration(
 ): Promise<void> {
   signal.throwIfAborted()
   if (cli === 'mimo') await assertMimoConfiguration(project, signal)
+  if (cli === 'kimi') assertKimiEnvironment()
 }
 
-export function parseKimiModelSources(raw: unknown, sourceId: string): FirstPartyModelSource[] {
+export function parseKimiModelSources(raw: unknown, sourceId: string, env: NodeJS.ProcessEnv = process.env): FirstPartyModelSource[] {
+  assertKimiEnvironment(env)
   if (!record(raw) || !record(raw.providers) || !record(raw.models)) return []
   const sources: FirstPartyModelSource[] = []
   for (const [alias, model] of Object.entries(raw.models)) {
@@ -172,13 +176,13 @@ export function parseKimiModelSources(raw: unknown, sourceId: string): FirstPart
       model.oauth ||
       model.providerId ||
       model.apiKey ||
+      model.apiKeyEnv !== undefined ||
       model.baseUrl
     )
       continue
-    const key =
-      typeof provider.apiKey === 'string' && provider.apiKey.length
-        ? provider.apiKey
-        : provider.env?.KIMI_API_KEY
+    const credential = resolveKimiCredential(provider, env)
+    if (credential.kind !== 'api') continue
+    const key = credential.key
     const protocol = model.protocol ?? provider.protocol ?? provider.type
     if (
       !literal(key) ||
@@ -193,7 +197,8 @@ export function parseKimiModelSources(raw: unknown, sourceId: string): FirstPart
       baseUrl: provider.baseUrl,
       apiType:
         provider.type !== 'kimi' && protocol === 'anthropic' ? 'anthropic-messages' : 'openai-completions',
-      sourceIds: [sourceId, `provider:${model.provider}`],
+      sourceIds: [sourceId, `provider:${model.provider}`, ...(credential.reference ? [`native:kimi:declared-env:${credential.reference}`] : [])],
+      ...(credential.environment ? { modelEnvironment: credential.environment } : {}),
       nativeModels: [
         {
           remoteId: model.model,
@@ -207,6 +212,13 @@ export function parseKimiModelSources(raw: unknown, sourceId: string): FirstPart
     })
   }
   return sources
+}
+
+/** Private launch environment from the exact admitted model-source snapshot. */
+export function kimiModelEnvironment(sources: readonly FirstPartyModelSource[], model: string): Record<string, string> {
+  const selected = sources.filter(source => source.nativeModels.some(({ choice }) => choice.id === model))
+  if (selected.length !== 1) throw new KimiCredentialConfigurationError()
+  return { ...selected[0]!.modelEnvironment }
 }
 
 /** MiMo's verbose records are capability metadata, not an account allow-list. */
@@ -349,6 +361,9 @@ export async function readFirstPartyModelSources(
       ...parseKimiModelSources(raw, sourceId),
       ...(await readKimiOAuthModelSources(raw, sourceId, signal)),
     ]
+    if (!sources.length && record(raw.providers) && Object.values(raw.providers).some(provider =>
+      ['unresolved', 'unsupported', 'conflict'].includes(resolveKimiCredential(provider).kind)))
+      throw new KimiCredentialConfigurationError()
     // Only the proven managed OAuth schema can be rehydrated from a current own
     // token. API providers remain uncached: their native resolver may derive keys.
     if (sources.length === 1 && sources[0]!.apiType === 'kimi-managed-oauth') {

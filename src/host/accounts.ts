@@ -14,7 +14,8 @@ import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import { randomUUID } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import { stripVTControlCharacters } from 'node:util'
-import { executableFor, resolveCliExecutable } from './adapters.ts'
+import { executableFor, resolveCliExecutable, captureCatalogMetadata } from './adapters.ts'
+import { readOpenCodeVersion, readOpenCodeV2Metadata, openCodeV2Actions, OpenCodeCompatibilityError } from './opencode-v2.ts'
 import {
   projectDirectory,
   ProcessCleanupUnconfirmedError,
@@ -50,6 +51,7 @@ import { listPiOmpAccountSources } from './pi-omp-native.ts'
 import { verifyHermesExecutable, HermesExecutableError } from './hermes-installation.ts'
 import { preparePiOmpAccountTerminal } from './pi-omp-accounts.ts'
 import { readKimiAccount, KIMI_MANAGE_LOGIN, prepareKimiAccountDirectory } from './kimi-accounts.ts'
+import { kimiDeclaredEnvironment, KimiCredentialConfigurationError } from './kimi-credentials.ts'
 import { readMimoAccount } from './mimo-configuration.ts'
 import { prepareMimoAccountTerminal } from './first-party-account-context.ts'
 import { spawnAccountTerminal, WindowsAccountTerminalError } from './windows-account-terminal.ts'
@@ -57,6 +59,8 @@ import { WindowsCliInstallationError, WindowsCliNotFoundError } from './windows-
 import { effectiveHermesHome } from './hermes-account-context.ts'
 import { ensureHermesNousFresh, HermesRenewalError, reserveHermesAccount } from './hermes-renewal.ts'
 import { readQoderAccount, qoderEnvironment, QODER_METADATA_ARGUMENTS } from './qoder-accounts.ts'
+import { readCursorAccount, assertCursorNativeRoute } from './cursor-accounts.ts'
+import { readMiniMaxAccount, minimaxSource } from './minimax-accounts.ts'
 
 const STATUS_TIMEOUT = 10_000
 const STARTUP_TIMEOUT = 30_000
@@ -91,6 +95,8 @@ const instructionFor = (cli: CliId, action: AccountAction): string => {
     : '按 CLI 原生流程退出登录。'
 }
 const actionsFor = (cli: CliId, config: RuntimeConfig): AccountStatus['actions'] => {
+  if (cli === 'minimax') return [{ id: 'manage', label: '账号终端', description: '在 MiniMax Code 原生终端自行管理登录；只使用当前选定数据目录和区域。' }]
+  if (cli === 'cursor') return [{ id: 'manage', label: '账号终端', description: '在 Cursor 原生终端自行管理登录；插件不注入登录或登出命令。' }]
   if (cli === 'claude')
     return [
       {
@@ -337,6 +343,17 @@ export class AccountManager {
       const executable = await resolveCliExecutable(cli, this.backend, this.config, control)
       installed = true
       control.throwIfAborted()
+      if (cli === 'opencode') {
+        const version = await readOpenCodeVersion(executable, argv => captureCatalogMetadata(this.backend, this.config, argv, cwd, control), control)
+        if (version.major === 2) return { cli, installed,
+          ...(await readOpenCodeV2Metadata(executable, version, cwd, control, { maxBytes: this.config.maxRunBytes })).identity,
+          actions: this.backend.spawnTerminal ? openCodeV2Actions : [] }
+      }
+      if (cli === 'minimax') return { cli, installed, ...(await readMiniMaxAccount(this.config, control)).identity,
+        actions: this.backend.spawnTerminal ? actionsFor(cli, this.config) : [] }
+      if (cli === 'cursor') return { cli, installed,
+        ...(await readCursorAccount(this.backend, this.config, executable, cwd, control)).identity,
+        actions: this.backend.spawnTerminal ? actionsFor(cli, this.config) : [] }
       if ((cli === 'qoder' || cli === 'qodercn'))
         return {
           cli, installed, ...(await readQoderAccount(executable, control, { cli, backend: this.backend, config: this.config, project: cwd })),
@@ -518,6 +535,10 @@ export class AccountManager {
           summary: error.message,
           actions: this.backend.spawnTerminal ? actionsFor(cli, this.config) : [],
         }
+      if (error instanceof OpenCodeCompatibilityError)
+        return { cli, installed, state: 'unavailable', summary: error.message, actions: this.backend.spawnTerminal ? openCodeV2Actions : [] }
+      if (error instanceof KimiCredentialConfigurationError)
+        return { cli, installed, state: 'unavailable', verification: 'local', summary: error.message, actions: [] }
       if (error instanceof MimoConfigurationError)
         return { cli, installed, state: 'unavailable', summary: error.message, actions: [] }
       if (error instanceof HermesExecutableError)
@@ -657,12 +678,21 @@ export class AccountManager {
     let instruction = instructionFor(cli, action)
     try {
       const executable = await resolveCliExecutable(cli, this.backend, this.config, startup)
+      if (cli === 'cursor') {
+        assertCursorNativeRoute()
+        if (action !== 'manage') throw new Error('Cursor 登录与登出请在原生账号终端自行操作')
+      }
       if (cli === 'hermes') await verifyHermesExecutable(executable, startup)
       startup.throwIfAborted()
       let launch: { argv: string[]; cwd: string; env?: Record<string, string> } = {
         argv: [executable, ...argumentsFor(cli, action)],
         env: firstPartyEnvironment(cli),
         cwd,
+      }
+      if (cli === 'minimax') {
+        if (action !== 'manage') throw new Error('MiniMax Code 登录与登出请在原生账号终端自行操作')
+        launch = { argv: [executable], env: (await minimaxSource(this.config, startup)).env, cwd }
+        instruction = '在当前 MiniMax Code 数据目录的原生终端管理登录；插件不注入命令，不自动切换其他账号。'
       }
       if (cli === 'claude') {
         const claudeAccountRoute = await readClaudeOfficialAccountRoute(cwd, startup)
@@ -686,6 +716,13 @@ export class AccountManager {
         launch.argv = [executable, ...QODER_METADATA_ARGUMENTS.filter((value) => value !== '--acp'), ...argumentsFor(cli, action)]
         launch.env = qoderEnvironment(cli)
       } else if (cli === 'kimi') {
+        // Native references are not materialized by provider-list. Restore only
+        // those explicitly declared keys after the Host's ordinary secret scrub.
+        const raw = await captureCatalogMetadata(this.backend, this.config,
+          [executable, 'provider', 'list', '--json'], cwd, startup, firstPartyEnvironment(cli))
+        let metadata: unknown
+        try { metadata = JSON.parse(raw) } catch { throw new KimiCredentialConfigurationError() }
+        launch.env = { ...launch.env, ...kimiDeclaredEnvironment(metadata) }
         if (action === 'login') {
           const current = await this.readStatus(cli, cwd, startup)
           startup.throwIfAborted()
@@ -757,10 +794,17 @@ export class AccountManager {
         launch = prepared
         instruction = prepared.instruction
       } else if (cli === 'opencode') {
-        const prepared = await prepareOpenCodeAccount(executable, action, this.config, startup)
-        launch = prepared
-        instruction = prepared.instruction
-        release = prepared.cleanup
+        const version = await readOpenCodeVersion(executable, argv => captureCatalogMetadata(this.backend, this.config, argv, cwd, startup), startup)
+        if (version.major === 2) {
+          if (action !== 'manage') throw new OpenCodeCompatibilityError('OpenCode v2 登录与退出请在原生账号终端自行操作；插件不注入认证命令')
+          launch = { argv: [executable], cwd, env: {} }
+          instruction = '在 OpenCode 原生界面管理账号和后台服务；不使用旧版隔离数据库，不自动登录、退出或改写原生配置。'
+        } else {
+          const prepared = await prepareOpenCodeAccount(executable, action, this.config, startup)
+          launch = prepared
+          instruction = prepared.instruction
+          release = prepared.cleanup
+        }
       }
       startup.throwIfAborted()
       allocation = spawnAccountTerminal(this.backend, {
@@ -849,7 +893,12 @@ export class AccountManager {
       // second login until its late handle/rejection establishes cleanup.
       if (!session && !allocation) {
         try {
-          await release?.()
+          if (error instanceof ProcessCleanupUnconfirmedError) {
+            // Metadata preparation can own a native range before any PTY exists.
+            // A failed range receipt must not release this CLI for another task.
+            this.unsafeQueries.add(cli)
+            this.onQueryCleanup?.(cli, error)
+          } else await release?.()
         } finally {
           this.reserved.delete(cli)
         }
@@ -865,6 +914,8 @@ export class AccountManager {
       if (error instanceof WindowsCliInstallationError) throw error
       if (error instanceof HermesExecutableError) throw error
       if (error instanceof MimoConfigurationError) throw error
+      if (error instanceof KimiCredentialConfigurationError) throw error
+      if (error instanceof OpenCodeCompatibilityError) throw error
       if ((error as NodeJS.ErrnoException)?.code === 'CLI_IDENTITY_MISMATCH')
         throw new Error(`${cli === 'omp' ? 'OMP' : 'Pi'} 执行入口身份不匹配，请检查该 CLI 的安装和路径`)
       throw new Error(

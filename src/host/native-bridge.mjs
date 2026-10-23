@@ -12,6 +12,8 @@ const modules = {
   kimi: ['native-kimi', 'runNativeKimi'],
   qoder: ['native-qoder', 'runNativeQoder'],
   qodercn: ['native-qoder', 'runNativeQoder'],
+  cursor: ['native-cursor', 'runNativeCursor'],
+  minimax: ['native-minimax', 'runNativeMiniMax'],
   grok: ['native-grok', 'runNativeGrok'],
   zcode: ['native-zcode', 'runNativeZcode'],
   opencode: ['native-opencode', 'runNativeOpenCode'],
@@ -90,8 +92,13 @@ try {
     controller.signal,
     (chunk) => process.stderr.write(chunk),
   )
+  let runnerSettled
+  const settlement = new Promise(resolve => { runnerSettled = resolve })
   control = await receiveNativeStopControl(config.stopDirectory, config.stopNonce, async () => {
     stop()
+    // A shared service is not stopped by local child cleanup. Its owned runner
+    // must finish independent remote settlement before the stop mailbox ACK.
+    if (config.transport === 'opencode-http-v2') await settlement
     await io.flush()
   })
   if (config.controlNonce) {
@@ -106,7 +113,7 @@ try {
   }, config.timeoutMs)
   const [module, entry] = modules[config.cli]
   const runner = (await import(`./${module}.mjs`))[config.forkOperation ? entry.replace('runNative', 'forkNative') : entry]
-  await runner(config, io)
+  try { await runner(config, io) } finally { runnerSettled() }
   if (controller.signal.aborted) error ??= new Error('任务已停止')
 } catch (caught) {
   error = controller.signal.aborted ? (error ?? new Error('任务已停止')) : caught

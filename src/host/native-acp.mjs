@@ -98,7 +98,7 @@ export async function runNativeAcp(config, io, settings) {
     }
     if (message.id !== undefined) {
       if (message.method === 'session/request_permission') {
-        if (active && !ended && message.params?.sessionId === sessionId) {
+        if (settings.allowHarnessPermissions !== false && active && !ended && message.params?.sessionId === sessionId) {
           const approved = await nativeHarnessAcpApproval(config, message.params, io.signal)
           if (approved) return peer.send({ jsonrpc: '2.0', id: message.id,
             result: { outcome: { outcome: 'selected', optionId: approved } } })
@@ -116,6 +116,7 @@ export async function runNativeAcp(config, io, settings) {
           },
         })
       } else {
+        if (settings.rejectClientRequests && active && !ended) fail('CLI 请求了不支持的客户端能力')
         return peer.send({
           jsonrpc: '2.0',
           id: message.id,
@@ -130,6 +131,9 @@ export async function runNativeAcp(config, io, settings) {
     const update = message.params.update
     if (!isRecord(update)) return
     if (update.sessionUpdate === 'config_option_update') {
+      if (settings.validateUpdate) {
+        try { settings.validateUpdate(update) } catch { fail('ACP 原生选型或权限发生变化'); cancel() }
+      }
       const observed = optionValue(findOption(update, 'model')?.currentValue)
       if (observed !== undefined && observed !== config.preference.model) {
         fail('ACP 实际模型与所选模型不匹配')
@@ -252,6 +256,9 @@ export async function runNativeAcp(config, io, settings) {
       if (!nonempty(state?.sessionId)) throw new Error('ACP did not return a session identity')
       sessionId = state.sessionId
     }
+    settings.validateState?.(state)
+    if (settings.configure) state = await settings.configure(peer, sessionId, state, config.preference)
+    else {
     state = await selectOption(peer, sessionId, state, 'model', config.preference.model, settings.encode)
     if (config.preference.effort !== 'default')
       state = await selectOption(
@@ -268,6 +275,7 @@ export async function runNativeAcp(config, io, settings) {
       if (!state?.modes?.availableModes?.some((mode) => mode.id === wantedMode))
         throw new Error('ACP does not advertise the selected permission mode')
       await peer.request('session/set_mode', { sessionId, modeId: wantedMode }, { jsonrpc: true })
+    }
     }
     io.signal.throwIfAborted()
     if (failure) throw new Error(failure)

@@ -6,6 +6,11 @@ import { discoverCodexModels } from './codex-models.ts'
 import { discoverAgyAccountModels } from './agy-models.ts'
 import { agyBackgroundEnvironment } from './agy-background-environment.ts'
 import { discoverQoderModels } from './qoder-accounts.ts'
+import { cursorExecutable, assertCursorNativeRoute } from './cursor-accounts.ts'
+import { discoverCursorModels } from './cursor-models.ts'
+import { minimaxExecutable, assertMiniMaxRoute } from './minimax-accounts.ts'
+import { discoverMiniMaxModels } from './minimax-models.ts'
+import { readOpenCodeVersion, readOpenCodeV2Metadata, OpenCodeCompatibilityError, OPENCODE_V2_EXECUTION_UNAVAILABLE } from './opencode-v2.ts'
 import { discoverFirstPartySources, readFirstPartyModelSources } from './first-party-models.ts'
 import { nativeAgyAccountIdentity } from './agy-windows-account.ts'
 import { extendedCatalog, isExtendedCli } from './extended-adapters.ts'
@@ -55,6 +60,11 @@ export interface Catalog {
   cli: CliId
   models: ModelChoice[]
   notice: string
+  /** Explicit diagnostic-only catalog. Such candidates are never offered for execution. */
+  executionUnavailable?: string
+  nativeModelCount?: number
+  transport?: 'opencode-http-v2'
+  allowedModes?: TaskMode[]
 }
 const managedPiEntry = () =>
   join(
@@ -73,6 +83,8 @@ function entryPresent(path: string): boolean {
 export const executableFor = (cli: CliId, config: RuntimeConfig): string => {
   if (cli === 'harness') throw new Error('Harness CLI 已移除，请新建 Hermes 任务')
   const configured = configuredCliExecutable(cli, config)
+  if (cli === 'cursor') return cursorExecutable(configured)
+  if (cli === 'minimax') return minimaxExecutable(configured)
   if (configured) return configured
   // A deployed standalone runtime is shared across platforms.
   if (cli === 'zcode' && entryPresent(managedZCodeEntry())) return managedZCodeEntry()
@@ -160,6 +172,17 @@ export async function catalogFor(
     const models = await discoverQoderModels(backend, config, executable, cwd, signal, cli)
     if (!models.length) throw new Error(`${qoderVariant(cli).label} 当前账号暂无可确认模型，请登录或刷新`)
     return { cli, models, notice: `${qoderVariant(cli).label} 原生账号模型目录；调用权限以实际请求为准` }
+  }
+  if (cli === 'minimax') return { cli, models: await discoverMiniMaxModels(backend, config, executable, cwd, signal),
+    notice: 'MiniMax Code 当前原生账号 ACP 目录；实际模型/强度回执，不代表真实生成或 Windows 验收' }
+  if (cli === 'cursor') return { cli, models: await discoverCursorModels(backend, config, executable, cwd, signal),
+    notice: 'Cursor 原生 ACP 模型目录；参数化 ID 原样保留，仅支持默认强度；调用权限以实际请求为准' }
+  if (cli === 'opencode') {
+    const version = await readOpenCodeVersion(executable, argv => capture(backend, config, argv, cwd, signal), signal)
+    if (version.major === 2) {
+      const snapshot = await readOpenCodeV2Metadata(executable, version, cwd, signal, { maxBytes: config.maxRunBytes, includeAgent: true })
+      return { cli, models: snapshot.candidates, transport: 'opencode-http-v2', allowedModes: ['plan'], notice: snapshot.identity.summary }
+    }
   }
   if (isExtendedCli(cli)) {
     const models = await extendedCatalog(
@@ -264,6 +287,7 @@ export function parseMimoModels(output: string): ModelChoice[] {
 }
 export function validatePreference(preference: Preference, catalog: Catalog): void {
   if (cliOf(preference) !== catalog.cli) throw new Error('CLI 配置不匹配')
+  if (catalog.executionUnavailable) throw new OpenCodeCompatibilityError(catalog.executionUnavailable)
   resolveModel(preference, catalog.models)
 }
 export function workerArguments(
@@ -284,6 +308,18 @@ export function workerArguments(
     if (!nativeTransport) throw new Error('Qoder 仅支持已确认的原生 ACP 通信，请新建任务')
     if (mode === 'plan') throw new Error('Qoder 当前 ACP 未公开只读规划模式，无法安全执行规划任务')
     return [executable, '--acp', '--permission-mode', 'accept_edits', '--model', preference.model]
+  }
+  if (cli === 'minimax') {
+    assertMiniMaxRoute()
+    if (!nativeTransport) throw new Error('MiniMax Code 仅支持原生 ACP，请新建任务')
+    if (mode === 'plan') throw new Error('MiniMax Code Plan 延迟生效，当前不支持安全规划任务')
+    return [executable, 'acp']
+  }
+  if (cli === 'cursor') {
+    assertCursorNativeRoute()
+    if (!nativeTransport) throw new Error('Cursor Agent 仅支持原生 ACP，请新建任务')
+    if (preference.effort !== 'default') throw new Error('Cursor ACP 未公开独立思考强度，请使用默认')
+    return [executable, 'acp']
   }
   if (cli === 'codex')
     return [
@@ -357,6 +393,8 @@ export function protocolFor(
   expectedModel?: string,
 ) {
   if (cli === 'harness') throw new Error('Harness CLI 已移除，历史记录仅供查看')
+  if (cli === 'minimax') throw new Error('MiniMax Code 必须通过原生 ACP 桥运行')
+  if (cli === 'cursor') throw new Error('Cursor Agent 必须通过原生 ACP 桥运行')
   if ((cli === 'qoder' || cli === 'qodercn')) throw new Error('Qoder 必须通过原生 ACP 桥运行')
   if (cli === 'zcode') return new ZCodeProtocol(emit, identify, maxLineBytes, expectedModel)
   if (cli === 'hermes') return new HermesProtocol(emit, identify, maxLineBytes)
@@ -451,6 +489,14 @@ async function resolveUncachedCliExecutable(
       } catch (error: any) {
         // Only an absent default PATH entry can use the legacy private install.
         // A broken or incompatible native/configured entry must remain an error.
+        if (cli === 'opencode' && executable === 'opencode' && !explicit &&
+            (error instanceof SubprocessExecutableNotFoundError || ['ENOENT', 'ENOTDIR'].includes(error.code))) {
+          const official = join(homedir(), '.opencode/bin/opencode')
+          if (existsSync(official) && statSync(official).isFile()) {
+            accessSync(official, constants.R_OK | constants.X_OK)
+            return backend.resolveExecutable(official)
+          }
+        }
         if (cli === 'pi' && executable === 'pi' && ['ENOENT', 'ENOTDIR'].includes(error.code)) {
           const managed = managedPiEntry()
           if (existsSync(managed) && statSync(managed).isFile()) {

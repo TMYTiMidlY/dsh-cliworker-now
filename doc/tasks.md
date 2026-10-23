@@ -2461,3 +2461,133 @@ OpenSpec 变更 `harden-host-lifecycle-durability`。来源为 4 个 Codex gpt-6
 - 发布：`main` 与注释 Tag `v0.8.2`（提交 `f1f5863`）已推送。该提交的 GitHub Windows CI 在“Build isolated plugin”失败：Windows 检出默认 `core.autocrlf=true`，把 LF 的 runtime-host 文件转成 CRLF，触发 `runtime-content-mismatch`（v0.8.1 起的提交均带 `[skip ci]`，此前未暴露）。后续提交 `1c36a2f` 新增 `.gitattributes`，令 `runtime-host/**`、`host-extensions/**` 不做换行转换，[CI](https://github.com/SuperWheel/dsh-cliworker-now/actions/runs/39456295405) 通过。安装包不受影响；Tag 保留原位，未强制改写。
 - [GitHub Release v0.8.2](https://github.com/SuperWheel/dsh-cliworker-now/releases/tag/v0.8.2) 已公开，含 tgz、SHA256SUMS.txt 和脱敏 package-verification.json；远端下载后 `shasum -c` 两项均 OK。
 - npm：用户本人登录并完成发布二次验证，同一 tgz 发布返回 `+ dsh-cliworker-now@0.8.2`。随即只读回查时 registry 仍返回 404、`latest` 仍为 0.8.1（发布扫描中）；按用户要求不再继续等待，公开可安装状态未确认。
+
+## 2026-10-22 fork：AGY 原生凭据路径修复（未安装/未发布）
+
+- 基线：fork 的 `09d8e54` / 0.8.2；本机仍安装上游 0.8.1，宿主现为 0.2.1-rc.2。用户确认 Codex 预览恢复，但本轮未升级/重启宿主，不把恢复归因于本轮代码。账号/CLI 兼容修复与后续 Cursor Agent、MiniMax Code 分阶段处理，保持包名，不增加版本、不提交/发布。
+- AGY：新增 `agyAccountPath`，身份与账号绑定共同读取 `.gemini/antigravity-cli/antigravity-oauth-token`；不回退旧 jetski 文件、不复制/迁移 token。保持只读有界、no-follow、身份检查和缓冲清零；Windows Credential Manager 分支不改。
+- 离线回归：`pnpm exec vitest run tests/account-identity.test.ts tests/agy-models.test.ts tests/cli-account-binding.test.ts tests/authorized-catalog-windows-agy.test.ts tests/windows-accounts.test.ts`，**5 文件 115 项通过**。新增合成场景：当前文件与旧文件冲突、当前文件删除/损坏后不复活旧认证、嵌套账号目录链接、同账号续期及模型/绑定一致性。
+- 规格：`pnpm spec validate fix-agy-native-credential-path --strict --no-interactive` 通过；`git diff --check` 通过。
+- 构建：冻结依赖安装使用 `--ignore-scripts`；首次 `pnpm typecheck` 因新 clone 尚无生成的 `dsh-cliworker-now/remote` 而失败，不能报告根目录 typecheck 已通过。随后 `pnpm build:preview` 完成生成协议、Host/Client 类型检查及两端 bundle，隔离产物位于 `.cache/preview-package`。未执行正式 build 或替换在线插件。
+- 本机材料验证：仅调用隔离产物的身份/绑定读取器并输出脱敏摘要，得到 `state=authenticated`、`verification=local`、`authMethod=oauth`、存在安全账号标签，以及绑定创建成功。未输出邮箱、token 或绑定摘要，未刷新或修改认证；此为当前原生材料兼容验证，不是远端模型调用通过。
+- 未完成：用户确认安装替换、当前 GUI 的实际账号/目录及用户选定模型请求；其他平台真实认证与模型均未验收。现有 token、历史、配置未改，AGY 在线插件仍需安装后才生效。
+- Codex 新症状：原 Worker 续聊在插件绑定门禁被拒，原生 `codex login status` 同时返回 ChatGPT 已登录。用户要求暂缓此问题，未执行登录、退出、吊销、账号迁移或放宽门禁。不将 shell 中其他独立账号入口认定为用户当前认证来源。
+- 安装包已生成：`.cache/dsh-cliworker-now-0.8.2-agy-local.tgz`，18064563 字节，SHA-256 `874db616aa02967a8bb107dbba2060b14065570fd90bdf6d8e0e41f4f17c6565`。只用隔离构建结果打包、跳过 prepack 重建；848 项、关键 helper 及当前路径均在包内，未发现路径逃逸或命名为原生凭据/会话目录的项目。未发布到 npm。
+- 用户批准先安装 AGY 阶段：备份 web profile 的 package/lock/patch/workspace 文件与原安装 0.8.1 包至 `.cache/install-backups/agy-stage1`；旧包 SHA-256 `499cc4b762d7e636b16d40b8240785859ab74445df917484d84caf3cacca0721`。`dsh plugin --profile web add <local.tgz> --ignore-scripts` 退出 0，依赖固定为本地 file 源；独立核对只有 CLI Worker 依赖变化、bundles 未改、Host/helper 与隔离产物逐字一致。
+- 热重载：已安装预构建包后，在已备份 profile patch 增加单行包来源注释，触发现有 profile HMR；未运行源码 dev:web watcher、未重启宿主、未启动替代服务。宿主 PID 保持 1635186；journal 无所筛查的 HMR/重启错误，但不能用无错误替代 GUI 验收。已请用户重新打开 AGY 设置确认摘要及模型；实际远端请求仍待选型授权。
+
+## 2026-10-22 fork：Cursor Agent 原生 ACP 接入（未安装/未发布）
+
+- 范围：在既有 `fix/native-accounts-and-cli-adapters` dirty 基线上新增独立 `cursor` CLI、别名、路径/设置/账号绑定、原生模型目录、cursor-acp-v1 执行桥及能力门禁；保留全部 AGY 修改和本附录以前的记录。未暂存/提交/推送、未改版本、未触碰当前安装插件或其凭据。
+- 依据：使用父会话已核实的 Cursor `status --format json` 与 ACP initialize/session-new 元数据；本子任务未启动真实 Cursor、未发任何真实 prompt。原生 status 只投影安全邮箱，userId 仅做私有 principal 哈希；有 token 标记但缺稳定身份显示 configured，不能授权任务。API key/自定义服务路由明确拒绝。
+- 目录与运行：零 prompt 的原生 ACP 元数据查询有字节/时间/清理上限，前后重新比对账号；模型 ID 保留 `[]` 及全部参数，只提供 default effort。执行前确认 plain-string model/mode；编辑=agent、规划=plan，恢复精确 session，额外权限拒绝。可能留下原生空会话，不删除历史。工具/MCP 注入、附件、fork、实时 steer 关闭。
+- 最终关联回归：`umask 022; pnpm test tests/cursor-native.test.ts tests/native-acp.test.ts tests/native-qoder.test.ts tests/routing.test.ts tests/cli-executable-paths.test.ts tests/accounts.test.ts tests/adapters.test.ts tests/runtime.test.ts tests/cli-settings.test.ts tests/worker-permissions.test.ts tests/harness-conversation.test.ts`，**12 文件 531 项通过**。其中 Cursor 新增 **51 项**，含真实 Node 合成子进程的成功/取消/畸形/RPC 错误/非零退出与 PID 退出核对；不是 Cursor 原生或模型验收。
+- 首次路径回归有 1 项失败：本会话 umask=0077，既有 fixture 写入目标时预期 0644、实际 0600；未改该测试/业务逻辑，显式 umask 022 复跑 45/45 通过，上述最终合并回归也通过。
+- 类型/构建：根 `pnpm typecheck` Host 通过，Client 因缺少 root generated remote 的已知基线错误失败。使用现有 `.cache/preview-package/lib/typert.remote-client.d.ts` 在内存中追加 Client paths 映射，当前 Client typecheck 通过，未写或重建 AGY preview。另在**新目录** `.cache/cursor-preview-20261022` 复制构建输入并使用现有锁定依赖，执行隔离 build，生成 Remote、Host/Client 类型检查与双端 bundle 全部通过（exit 0）；随后收紧空白 API 路由拒绝条件，在另一个全新目录 `.cache/cursor-preview-20261022-final` 对最终源码再次隔离构建，完整通过（exit 0）。原 AGY preview/安装包保持不变。
+- 规格：新增 `add-cursor-native-acp` proposal/spec/design/tasks；`pnpm spec:check` **25/25 通过**。校验器另提示原有 migrate 变更含重复 ADDED header、归档时可能拒绝；本任务未归档、未修改该历史变更。`git diff --check` 通过。
+- 未验证：真实 Cursor 模型授权/生成、原生续聊与取消、浏览器设置/侧栏视觉、Windows native shim/账号/模型。Windows 自动发现关闭，仅允许显式 Cursor CLI-native 路径；不启动 IDE 或 generic agent。仅提供用户操作的账号终端，不猜测或注入登录/登出命令。不将模拟通过或隔离构建写成完整业务验收。
+
+## 2026-10-22 fork：MiniMax Code 原生 ACP 与 Cursor 邻接修正（隔离包，未安装/未发布）
+
+- 本子任务为唯一源码写者，沿用 `fix/native-accounts-and-cli-adapters` dirty 基线；保留 AGY/Cursor 全部既有改动、Cursor final preview、AGY tgz/rollback。不运行真实 CLI/模型、不读取真实凭据、不改 `~/.dsh`、不暂存/提交/推送、不增加版本。
+- MiniMax：新增规范 `minimax`（mmx/mcode/minimax code），稳定 mcode 路径与可选明确数据根；首阶段只支持标准 prod/cn、prod/en 的 file token_plan OAuth。配置缺省 token_plan 有已安装源码依据；API/custom默认来源、provider/model headers/auth/endpoint覆盖拒绝。config内容指纹+文件版本加入绑定，防止旧OAuth授权BYOK及A→B→A；不调用未实现的ACP providers/list、不把provider默认OAuth行当登录。
+- 认证：state v2、envelope/credential record v1（原生ct=dt=1），scope含agent.default、client/audience/region/env/generation一致；有界私有no-follow读取与前后文件/目录身份核对。账号主体来自稳定subject/accountId，或精确匹配当前token指纹的verified身份cache；缓存不独立证明认证，有效期不足原生一分钟保留待原生续期。区域fallback仅统计原生有效状态，忽略anonymous/error/退出中，不自动选其他账号目录。
+- 协议：minimax-acp-v1要求protocol1/minimax-code身份；opaque model含原生空variant完整保留，仅minimax provider准入，逐模型切换后刷新thinkingEffort。prompt前确认model/effort/进程Ask(default)/default mode，Plan/附件/工具注入/fork/steer关闭。精确cwd/session恢复、历史抑制、原生取消后等待受管范围退出，失败/限额/缺失终态不报告成功。
+- Cursor修正：元数据ownStop只接受完整回执与已证明本次预期signal/native128+signal，不再吞exit1/未知signal。Cursor/MiniMax raw-native、RPC错误/auth载荷及原始stderr不进入持久/公开诊断；解析后的正文/公开过程/工具继续展示。新增端到端合成native-bridge测试，检查全部stdout/stderr/native/raw/result，不仅检查最终文案。
+- 父会话最新真实Cursor状态：hasAccessToken/hasRefreshToken/isAuthenticated标记存在但userInfo.userId缺失，configured/no principal为正确拒绝，未放宽身份门禁。先前46模型元数据不是当前真实派遣通过；在线AGY阶段包尚无Cursor，首次发起Cursor返回unknown，不作为新接入代码失败或成功证据。
+- 自动验证：最终关联命令为 `umask 022; pnpm exec vitest run tests/minimax-native.test.ts tests/minimax-bridge.test.ts tests/cursor-native.test.ts tests/account-identity.test.ts tests/agy-models.test.ts tests/cli-account-binding.test.ts tests/accounts.test.ts tests/native-acp.test.ts tests/native-qoder.test.ts tests/native-transport.test.ts tests/routing.test.ts tests/cli-executable-paths.test.ts tests/adapters.test.ts tests/runtime.test.ts tests/cli-settings.test.ts tests/worker-permissions.test.ts tests/harness-conversation.test.ts`。此前本轮一次关联回归发现两处通用binding fixture未覆盖新CLI、一次routing对code歧义旧断言遗漏mcode候选，已补合成来源和歧义候选，不放宽产品门禁。MiniMax账号/目录61项、合成执行及桥24项、Cursor55项；其余关联协议/账号/权限回归一起核对；最终 **18文件、719项通过，0失败**，退出0，耗时5.44秒。
+- 类型/构建：根 `pnpm typecheck` 的Host通过，Client仍有基线缺root generated remote错误，未伪报根目录通过。新目录 `.cache/minimax-preview-20261022-first` 隔离build通过；最终源码在另一新目录 `.cache/minimax-preview-20261022-final` 再次隔离build、Remote生成、Host/Client bundle及 `node scripts/build.mjs --typecheck-only` 全部退出0（DSH0.2.1-rc.2）。原有preview未写入。
+- 最终安装候选：仅对final隔离产物执行 `npm pack --ignore-scripts`，`.cache/minimax-package-20261022-final/dsh-cliworker-now-0.8.2.tgz`，18065332字节，SHA-256 `3b79d792981090b2cf471602eaeffdbda9c9a107c96e59962f9c62cea9b18e0a`。868项，MiniMax native/state/account/catalog helper及remote模块齐全、已生成共享CLI registry含minimax，未发现路径逃逸或原生credential/account文件。首次打包后检查脚本错误地假设生成Remote JS含CLI枚举字面量而报错；实际Remote为string/JSON wire，无该枚举，随后按真实共享registry及archive项目复核通过，未重打或覆盖包。
+- OpenSpec：`add-minimax-native-acp`严格校验通过；全规格26/26通过，仍有既有migrate目录重复ADDED header的archive提示，未改历史变更或归档。`git diff --check`通过。真实MiniMax仅有父会话initialize成功、默认来源session/new原生login-required证据；没有已认证目录、真实生成/续聊/停止、侧栏视觉或Windows验收。API/custom来源也未实现，明确留作后续支持范围，不冒称全部认证或完整业务验收。
+
+## 2026-10-22 AGY 当前原生请求验收补充（父会话实际结果）
+
+- 父会话使用插件原生选型，用户选择 `gemini-4-argon-high` / high，read_only plan，派遣 `agy-1`（Worker `01e077ac-60d8-45cf-a0b1-583188b0ee35`，run `e3f720a3-49e6-47e8-b0b2-3bb0b28acb44`）。后台job `cliworker-b47367ceb0db4833` 完成，原生回复“你好！这是一个 AGY 会话。”。
+- 父会话独立cliworker_status核对completed、observedModel精确匹配、原生conversationId `9d5684ec-b11a-4063-ab0b-ae6f8f18286a`、Harness子会话 `7ee1eb8b-4072-477e-a04b-4ab77de04abe` 和transport `agy-stream-v1`。这是实际请求/回传验收，不是本子任务运行模型；没有请求或发现代码修改。
+- GUI账号摘要、目录和侧栏视觉仍待用户确认，不将原生回执写成截图或视觉验收；MiniMax/Cursor真实性限制不受此AGY结果改变。
+
+## 2026-10-22 父会话：新版本地安装与 Cursor 启动门禁
+
+- 用户在原生问题卡明确选择“安装新版，再帮我开 Cursor”，已告知包含未完成真实调用验收的 MiniMax 入口。安装前确认所有编码子会话 inactive、Git index为空、当前父会话CLI Worker均完成且无native-bridge进程。
+- 父会话独立运行 `umask 022; pnpm exec vitest run tests/cursor-native.test.ts tests/minimax-native.test.ts tests/minimax-bridge.test.ts tests/agy-models.test.ts`：4文件、147项通过，退出0；包含全桥stdout/stderr/native/raw/result隐私标记回归。重新核对归档SHA-256与868项、包名/版本不变，8项关键安装helper与final隔离构建逐字节一致，无原生数据文件。首次父校验错误地使用 `lib/host` 而非真实 `lib/` helper路径，定位实际archive路径后修正检查通过，未改包。
+- 当前AGY版与Web profile四份配置备份至 `.cache/install-backups/cursor-minimax-stage1/`，AGY回退包SHA-256仍为 `874db616aa02967a8bb107dbba2060b14065570fd90bdf6d8e0e41f4f17c6565`。随后 `dsh plugin --profile web add <final归档绝对路径> --ignore-scripts` 退出0；存在peer依赖警告但安装完成。只更改CLI Worker本地file依赖，其他依赖与bundle列表逐项核对不变。
+- 将Web profile已有CLI Worker说明注释更新为AGY + Cursor + MiniMax以触发profile HMR；没有重启宿主。原PID `1635186` 保持，原URL未认证访问仍由认证保护返回401，未将其冒充已登录浏览器视觉验收。`cliworker_resolve cursor` 已返回规范cursor，证明当前Host加载了新入口。
+- 随后按用户请求调用 `cliworker_start cursor`（只问候、read_only plan），被“Cursor 原生账号身份无法确认”门禁拒绝，没有生成Worker或发出模型请求。最初将其解释为缺稳定userId，后续实测与原生源码确认是数字类型被适配器误拒绝，见下段更正；未执行login/logout、不伪造会话。
+
+## 2026-10-22 Cursor 原生 int32 身份修正与安装后核对
+
+- 根因已确认：原生 Cursor GetMeResponse user_id 是 protobuf int32（默认0），status直接输出数字；此前模拟夹具错误地使用字符串，适配器也仅接受字符串。真实status安全投影确认userId为正整数；没有读取或显示真实ID值、token或凭据文件。此前把“不符合字符串校验”等同于“原生缺身份”的判断不成立，不将其归因于用户未登录或网络失败。
+- 规格先补充原生数字身份场景，然后只接受1..2147483647整数，拒绝0/负数/小数/超范围/字符串强转；私有稳定指纹保留数值类型。更新合成status和跨CLI binding夹具，增加12项数字边界回归；不扩展JWT或凭据文件回退。
+- 父会话执行 `umask 022; pnpm exec vitest run tests/cursor-native.test.ts tests/cli-account-binding.test.ts tests/minimax-bridge.test.ts tests/native-acp.test.ts tests/agy-models.test.ts`：5文件179项通过，Cursor67项；strict Cursor校验和diff检查通过。全新 `.cache/cursor-numeric-id-preview-20261022` 隔离生成Remote、Host/Client类型检查及bundle通过；旧预览和归档保留。
+- 新归档 `.cache/cursor-numeric-id-package-20261022/dsh-cliworker-now-0.8.2.tgz`，18065512字节、868项、SHA-256 `c3a1ebe96628b09a49d25885ef38c78b7656b2d508cf8e443f4ffd6216c4402c`。已核对归档与fresh build的Host/Client bundle、数字账号helper及原生runner逐字节一致；私有native status投影实际得到authenticated与稳定principal。
+- 继续执行用户已授权的同阶段修复热替换；安装前配置与旧联合包备份在 `.cache/install-backups/cursor-numeric-id-stage1/`，安装退出0。仅CLI Worker file依赖改变，其他依赖和bundle列表不变；安装文件与fresh build一致，更新profile注释触发HMR，宿主PID仍1635186，没有重启。
+- 数字修复后的 `cliworker_start cursor` 等待1800000ms后工具超时，没有返回Worker/job ID。超时后独立cliworker_status仅有原Codex和AGY两个已完成Worker，且无native-bridge进程；没有重复派遣或宣称真实模型已运行，已向用户询问是否看到模型/角色选型卡。超时所在具体阶段未由工具结果证明。
+- 补充零prompt实机检查：在拥有验证依赖的同构隔离构建中执行账号绑定→Cursor原生目录→绑定复核，结果稳定绑定、46模型、仅default effort、全部元数据进程退出、0个模型prompt。安装文件之前已逐字节核对一致。第一次尝试直接导入安装包的非bundled types helper因独立Node缺Host peer解析环境失败（未启动CLI），随后使用构建验证环境通过；不将诊断脚本环境错误当插件运行故障。真实Cursor生成/续聊/取消及浏览器视觉仍待验收。
+
+## 2026-10-22 OpenCode v2 元数据检查点（未安装，执行代码仍待实现）
+
+- 独立编码子任务在 `fix/native-accounts-and-cli-adapters` 单写者范围建立 `support-opencode-v2-native-metadata` 提案/规格/设计/任务后实施，保留已有AGY/Cursor数字ID/MiniMax所有dirty与安装包。没有git add/commit/push/tag、版本修改、~/.dsh编辑、原生CLI/服务启动、模型、login/logout、SQL或凭据值读取；只静态读取已装2.0.31 ELF的服务源码片段和官方v2 OpenAPI。
+- 新增 `opencode-v2.ts`：明确semver1/2分流、默认PATH缺失时官方入口fallback；Linux默认原生service registry按private mode/UID/no-follow/父目录/inode/大小/版本复验，并核对/proc进程exe、PID和HTTP info身份。只接受带私有认证的127.0.0.1原生服务与固定GET info/integration/provider/model，查询取消/超时/总字节有界。不读auth.json补证、不复制DB、不自动启动或终止服务。
+- 元数据按相同project的包装响应、当前首个credential key/oauth来源与provider/model关联；环境/外部/needs_auth、disabled及认证/服务/header覆盖保守过滤。数组variants和空variant保留精确可逆tuple；仅诊断默认effort和未知费用，不向Client传递原始label/settings/headers/错误/密码。输入及全局衍生候选4096项/8MiB分别有界，覆盖合法schema放大攻击；opaque ID要求规范base64url、fatal UTF8和JSON tuple roundtrip。
+- AccountManager在缺服务时显示不可用并明确不等于登出；有原生记录显示configured而非远端认证完成。账号终端仅manage、裸原生入口和原project，无v1 XDG/DB/auth注入。Catalog可执行models为空、保留诊断计数与执行未实现说明；设置缓存不持久化该诊断，选型在空问题卡/保存前明确拒绝，legacy catalog/launch在创建v1状态前版本拒绝。v1有效版本路径保留。
+- 正常原生UI connect-key/OAuth-complete创建新credential record，公开PATCH只改label，refresh复用record，可供下一阶段实现同服务+record ID+重检/切换观察的实际来源契约。当前未接通的是v2 owned-session执行、策略、durable log/幂等输入、远端取消settlement与quarantine代码，不是证明原生API不可能支持，也不要求新增数学原子pin。change任务4.1/4.2/真实4.3保持未勾选，没有伪造v2 transport或远端会话。
+- 初次v2合成60项形成前曾有两个fixture/错误投影问题：ESM homedir不可spy、已知兼容拒绝被通用账号终端错误吞掉；分别改为显式mock与安全异常白名单。新增显式version probe使旧v1夹具10项失败，补1.18.21版本响应/回执及metadata callback后通过；没有为过测试回退或放宽产品gate。
+- 最终关联命令：`umask 022; pnpm exec vitest run tests/opencode-v2.test.ts tests/opencode-adapter.test.ts tests/harness-opencode-accounts.test.ts tests/extended-integration.test.ts tests/accounts.test.ts tests/cli-account-binding.test.ts tests/native-harness-extended.test.ts tests/runtime.test.ts tests/cli-executable-paths.test.ts tests/cli-executable-management.test.ts tests/authorized-catalog-windows-agy.test.ts tests/settings-catalog-cache.test.ts tests/dispatch-flow.test.ts tests/cursor-native.test.ts tests/minimax-native.test.ts tests/minimax-bridge.test.ts`，16文件531项通过、4个既有平台skip，退出0；其中v2新增60项。另 `pnpm exec vitest run tests/windows-accounts.test.ts -t opencode`：2项通过、31项筛选skip，均为模拟，不是Windows实机验收。
+- 扩展检查整份 `windows-accounts.test.ts` 时，Cursor/MiniMax两个新CLI各有两项既有夹具分支缺失，在该文件configured()的 `Unexpected retired CLI in Windows account test` 处共4项失败；OpenCode原有两项通过。未修改或隐藏其他CLI的这4项，也未声称全量套件通过。
+- 新目录 `.cache/opencode-v2-preview-20261022` 隔离构建：Remote生成、Host/Client bundle与post-generation typecheck均退出0，DSH0.2.1-rc.2；opencode-v2/Cursor/MiniMax源副本一致。未覆盖旧preview/归档，无安装包或在线替换。父会话数字修复包SHA-256仍 `c3a1ebe96628b09a49d25885ef38c78b7656b2d508cf8e443f4ffd6216c4402c`。
+- `pnpm spec validate support-opencode-v2-native-metadata --strict --no-interactive`通过；`pnpm spec:check`为27/27通过，既有migrate的重复ADDED archive提示仍存在；`git diff --check`通过，index为空。真实原生v2服务、账号/模型/续聊/停止、GUI及非Linux均未运行/验收，禁止把本检查点说成完整OpenCode v2可派遣。
+
+## 2026-10-22 父会话 Kimi 2.2 凭据来源修正（源码检查点，未安装）
+
+- OpenCode子任务明确释放独占写入后，父会话核对完整状态树并接手源码。真实 `~/.kimi-code/bin/kimi --version` 返回2.2.0。只读审查对照该ELF内的原生解析器与ConfigService：provider-list来自原生用户配置/effective env/可信app内存，不从项目local.toml合并provider；TOML的api_key_env转换为CLI的camelCase引用，引用不会自动展开为apiKey。未读取用户原始配置或凭据值用于展示，未发起登录/退出。
+- 旧模块的4种合成输入明确复现：OpenAI私有env漏报未配置，非Kimi provider误认env.KIMI_API_KEY，显式apiKeyEnv被错误回退另一把key，以及inline/ref冲突仍被绑定。当前用户的旧GUI“未登录”仍没有复现，不将这些兼容缺陷冒充已证明的原报告根因。
+- 新建 `fix-kimi-native-credential-resolution` 规划后实现 `kimi-credentials.ts`：原生trim/优先级/冲突/first-raw-hit规则统一用于status和model scopes；只解析明确引用，缺值/未支持保持配置未就绪而不选另一来源；API不冒充OAuth。全局KIMI_MODEL_*覆盖明确拒绝，managed OAuth原有文件/额度检查保留。不给未知vertexai类型发明env映射，不新增模型协议。
+- 任务从准备好的private model sources提取唯一模型环境，仅恢复声明变量；准备快照和最后当前源都与admission绑定比较，覆盖A→B→A。账号终端仅聚合自己声明的必要项并限制数量/字节，不复制整个宿主环境。实际canonical subprocess scrub及桥请求测试确认敏感父环境仍被清除，私有引用只在env传递，不进入argv/request/Gateway/Worker记录。只读复核发现ELECTRON_RUN_AS_NODE大小写别名可绕过预期保留名门禁，已按保守忽略大小写修正并增加两项回归。
+- 父会话另发现终端分配前元数据cleanup失败可能因没有PTY而释放CLI；已保留unsafe query并回调runtime，阻止该CLI新任务而不影响其他CLI。新增模拟不确认范围退出的测试。首次该测试仅因断言中文片段、实际为已有typed English cleanup错误而失败，改断言ProcessCleanupUnconfirmedError类型后通过；未为通过测试放宽产品清理规则。
+- 首轮5文件241项通过；加入真实WorkerRuntime的合成后端后，new Kimi42项通过。扩大回归暴露3项旧Kimi终端空响应fixture和2项新Cursor/MiniMax被legacy fixture强制旧通路的问题；补真实provider-list JSON空配置、保持ACP-only新CLI的native transport/default effort后通过。原Windows通用文件矩阵不适用于Cursor进程状态及尚未支持的MiniMax Windows文件认证，已明确分开：13个文件来源、Cursor数字状态/切换/退出投影、MiniMax Windows显式入口门禁；不伪造新CLI的Windows凭据文件成功。整份windows-accounts31项通过，仍不是Windows实机验收。
+- 最终关联回归为24文件807项通过、4项既有平台skip（合计811），Kimi新增45项；范围包括kimi-credentials/kimi-accounts/kimi-oauth-models/first-party-models/accounts/cli-account-binding/runtime-account-isolation/native-runtime/windows-accounts/opencode-v2/opencode-adapter/harness-opencode-accounts/extended-integration/native-harness-extended/runtime/cli-executable-paths/cli-executable-management/authorized-catalog-windows-agy/settings-catalog-cache/dispatch-flow/cursor-native/minimax-native/minimax-bridge/agy-models。命令为 `umask 022; pnpm exec vitest run <上述各 tests/*.test.ts>`，退出0；不是整个仓库全量测试。Kimi strict通过，spec:check28/28通过，既有migrate重复ADDED archive提示保留；diff检查通过。
+- 全新 `.cache/kimi-credentials-preview-20261022` 隔离生成Remote、构建Host/Client，并以 `scripts/build.mjs --typecheck-only` 进行post-generation类型检查，DSH0.2.1-rc.2均通过；9个关键源码副本逐字节一致。没有覆盖其他preview或归档，不把根目录缺生成Remote的独立Client检查说成已通过。
+- 构建后实际native provider-list私密复核（同构预览与受控Node进程后端，不是在线Gateway/浏览器验收）返回installed=true、configured/local/api、37来源/37本地配置模型、OAuth0；新绑定与数字Cursor修复前预览的Kimi绑定完全一致，全部元数据进程退出、0个模型prompt。只运行元数据命令，不显示真实密钥/账号值或原始错误，不做远端模型授权宣称。
+- 在线web profile仍固定 `cursor-numeric-id-package-20261022/dsh-cliworker-now-0.8.2.tgz`，本阶段没有安装、宿主重启、Git暂存/提交/推送、版本或发布动作。原生用户文件、历史与所有旧preview/安装包/回退备份保留；Kimi真实请求/旧GUI复现/Windows及OpenCode v2执行仍待后续，不归档这些未验收项。
+
+## 2026-10-22 OpenCode v2 自有纯文本执行检查点（源码与隔离预览，未安装）
+
+- 父会话释放Kimi写权后，同一子会话作为唯一写者继续当前分支，先扩展原OpenSpec再实施。保留AGY/Cursor数字身份/MiniMax/Kimi所有既有dirty、账号/历史、旧preview与archive；包名仍dsh-cliworker-now、version仍0.8.2。没有add/commit/push/tag、打包/安装、~/.dsh编辑、原生OpenCode服务/CLI启动、真实模型、login/logout、DB/SQL或provider凭据导出。全部服务和准入数据为明确合成；静态2.0.31 ELF与公开API用于合同核对。
+- 提取纯MJS service core、owned ledger及v2 runner，Host/bridge共用解析和身份核验；直接literal-loopback Node HTTP避开Host fetch/proxy。保留metadata总预算、候选4096/8MiB及no-follow私有registry验证；稳定credential/provider/model/default-agent binding与每轮registry/PID/password epoch分离。默认agent用原生首项，不硬编码build/plan；最后唯一deny-all规则不重放旧ALLOW。密码/私有地址/fresh proof key仅走私有env，v2 raw-wire/错误/stderr不输出私密载荷，不改变v1遥测。
+- 只开放显式read_only纯文本；version/selection授权后、preparation前固定opencode-http-v2。保留实际bridge.ensure和官方DSH child创建/只读/回复投影，再提前返回不分配工具/MCP lease。v2所有工具、技能、附件、编辑、fork、实时steer、会话内模型切换均不开放；公开cap、backend及控件一致。opaque模型/variants精确保留，G/a两个合法tuple的base64大小写折叠冲突已在实际共享picker修正；会话/实际step的模型echo必须一致。
+- owned session只按源schema允许的随机ses/msg_前缀ID创建；create返回existing也核对marker/project/no-parent/agent/model/deny，绝不收养或删除用户历史。签水位之后的baseline不跳过已完成外来user/synthetic或未知历史变化；idle/空inbox/相同marker仍会拒绝并invalid，外来内容保留。相同来源正常服务重启后已完成会话可续聊。
+- input ID/不可变正文摘要在可能写入前持久化，只POST一次；丢失ACK核对同ID inbox/user-history/durable log，不重发取消过的ID。execution.started先于delivery，关联baseline/own input/lifecycle而不造executionID；log.synced为捕获水位，过滤行允许seq间隙。只投影final ended文本并去重，缺最后精确model step/最终正文或final冲突保留MODEL UNCERTAIN；不虚构live delta/usage。
+- 关键P1回归证明native pre-D.admit异步准备可在一次idle cleanup之后晚到：无正向immutable own-input准入证据时，cancel204/interrupt false/wait204绝不签settled，保持quarantine。晚到后仅明确cleanup-only先证明已准入，再同PID cancel-own/interrupt(resume=false)/wait/active/inbox/log清理，零重POST。已知准入且前台清理已证明但terminal发布缺失，只将模型结果保留未知，不伪造成功。任何tool.called/success/failed均拒绝，executed:false是providerExecuted而非未执行。
+- Node runner私有HMAC绑定worker/source/project/model/agent/session/marker/epoch/run/input/payload/baseline/水位/关键标志及fresh key，Host在local range退出后核对；原始SSE/result不能提供proof。pending→spawn抛错、admission后桥SIGKILL、PID替换、缺清理证据及策略异常默认持久隔离，冷Host恢复不放行新prompt，其他CLI不被连带阻塞。cleanup-only可跨当前账号变化，但不借新账号派遣、不杀共享service、不删历史。无会话的pre-spawn不确定、GET404、epoch替换或策略异常可能仍无法自动解除，明确保留人工核查限制；不声称任意plugin/detached OS作业已停止。
+- 实际执行的最终关联命令如下。31文件938项通过、4项既有平台skip，合计942，退出0；harness-conversation.test.ts路径过滤也包含同名tsx，因此实际文件数31。不是整个仓库全量测试。v2为61 metadata、44 actual-bridge/runtime、1实际CliWorkerService/官方AgentLoop集成，仍全部是合成v2服务，不是真实原生模型或GUI验收。
+
+```sh
+umask 022
+pnpm exec vitest run tests/kimi-credentials.test.ts tests/kimi-accounts.test.ts tests/kimi-oauth-models.test.ts tests/first-party-models.test.ts tests/accounts.test.ts tests/cli-account-binding.test.ts tests/runtime-account-isolation.test.ts tests/native-runtime.test.ts tests/windows-accounts.test.ts tests/opencode-v2.test.ts tests/opencode-v2-execution.test.ts tests/opencode-v2-service-integration.test.ts tests/opencode-adapter.test.ts tests/harness-opencode-accounts.test.ts tests/extended-integration.test.ts tests/native-harness-extended.test.ts tests/runtime.test.ts tests/cli-executable-paths.test.ts tests/cli-executable-management.test.ts tests/authorized-catalog-windows-agy.test.ts tests/settings-catalog-cache.test.ts tests/dispatch-flow.test.ts tests/cursor-native.test.ts tests/minimax-native.test.ts tests/minimax-bridge.test.ts tests/agy-models.test.ts tests/model-presentation.test.ts tests/harness-service-integration.test.ts tests/harness-conversation.test.ts tests/worker-permissions.test.ts
+```
+
+- 中途失败均定位后修正：首个actual bridge positive仅测试误读不存在的stderr文件；wrong-model异常被错误作为可重连transport后等待，改为protocol violation立即终止；实际plugin integration fixture补齐userQuestions/typert/sessionController必需服务；host类型检查的optional binding.reasons以安全对象赋值修正。最后补final冲突的MODEL UNCERTAIN标志后重跑全部关联测试并重建r2，没有复用旧结果或放松隔离。
+- 首轮 `.cache/opencode-v2-execution-preview-20261022` 保留；最终 `.cache/opencode-v2-execution-preview-20261022-r2` 由新helper隔离生成Remote、Host/Client bundle及post-generation typecheck，对DSH0.2.1-rc.2均退出0。283个src文件逐字节匹配root，3个新MJS分别在lib与lib/types/host的副本一致。没有覆盖旧预览、archive或在线安装；根目录缺生成Remote的独立Client检查不冒称通过。
+- strict change与spec:check通过（28/28，既有migrate重复ADDED archive提示保留），diff检查/index核对在最终交接前复跑。父会话只读审查反馈的late-admission、Tool executed字段、缺正文、model.updated、真实child/no-lease、fixed-model cap和baseline外来历史问题均已落实反例；其最后4核心文件hash核对不冒充其独立测试或完整实机验收。
+- OpenSpec 4.1–4.6为上述纯文本源码/合成/构建范围完成；5.1完整读写/工具/原生后台等能力、5.2真实服务/账号/模型/停止/续聊、GUI和非Linux继续未完成，不归档。安装与后续父会话独立验收/同名0.8.2本地archive另行处理，本子任务不执行。
+
+## 2026-10-22 父会话最终独立复验与本地候选包（未安装）
+
+- 原写者正式释放后核对完整状态树：所有子会话inactive，父会话接手唯一写权。实际cwd为本fork，branch仍fix/native-accounts-and-cli-adapters，HEAD仍09d8e5485bc49e8a3b8bec2fc001e98ed954f9b6，index为空。未git add/commit/push、改版本或发布。
+- 在子任务最终31文件命令之外，父会话主动加入account-identity与routing两份关联测试。首次33文件为1007PASS、1FAIL、4既有SKIP：routing仍断言chooseDispatch三参数，而v2模式门禁已要求第四个TaskMode；只更新两处默认accept-edits断言，没有修改产品代码或放松门禁。再次独立执行同一33文件，1008PASS、4既有SKIP（1012），退出0；Kimi45、v2 metadata61/execution44/service integration1均通过。这不是全仓测试或真实原生服务验收。
+- 父会话独立spec:check28/28通过，既有migrate重复ADDED archive提示保留；diff检查通过。最终冻结审查只读确认四个核心文件hash，父会话再完整核对283个src与R2和新构建副本一致；源树SHA-256为c9039f0105a1ed36eb1fd50bfb337cb7203f591b536be4f3240de79ebbe77dfe。旧预览均保留。
+- 全新 `.cache/fork-native-adapters-parent-preview-20261022` 独立生成Remote、构建Host/Client并执行post-generation两端typecheck，DSH0.2.1-rc.2通过。三份新MJS在lib与lib/types/host逐字节对齐源文件；没有用旧预览代替本次重建，也不声称根目录缺Remote的独立Client检查通过。
+- 只在上述新预览执行npm pack --ignore-scripts，保持name=dsh-cliworker-now/version=0.8.2，生成 `.cache/fork-native-adapters-package-20261022/dsh-cliworker-now-0.8.2.tgz`：18145957字节、886个常规文件，SHA-256为339092da8e449c89af56d7f1e4514e732c2add6d60bca7fe800bb339fb6bf09c。先核对tar路径无遍历/链接/特殊项，再在新 `.cache/fork-native-adapters-archive-check-20261022` 解包；886文件逐一核对构建字节（package.json允许npm的gitHead元数据差异但其他语义必须相同），三个原生MJS的双副本再次对齐root源。未覆盖、删除或移动旧包、缓存、用户文件。
+- 本候选整合AGY路径/Cursor数字身份与ACP/MiniMax首阶段/Kimi2.2来源/OpenCode v2只读纯文本；不包含v2编辑/工具/附件/fork/steer/会话内模型切换或非Linux已验收承诺。真实Kimi旧GUI误报未复现，Cursor真实会话仍未创建，MiniMax当前默认来源需要原生登录；不以模拟测试抹掉这些边界。
+- 本阶段只准备本地archive，不安装、不重启宿主、不修改profile或用户凭据/历史。替换当前在线包必须另外取得用户确认；浏览器视觉、原生模型与平台验证仍未执行，不归档未完成规格。
+
+## 2026-10-23 用户授权提交 fork，并将仓库移动至家目录
+
+- 用户此次明确授权把本轮成果提交并推送到个人fork，并指定实际仓库移到 `/home/timidly/dsh-cliworker-now`；另明确包名及版本都不变，仍为dsh-cliworker-now/0.8.2。未获合并main、标签、Release或重新安装授权，不执行这些操作。全部原子会话已inactive，父会话作为唯一写者接手。
+- 移动前逐项核对源/目标绝对路径、目标不存在、分支和空index；实际仓库及全部dirty、缓存和历史整体移动，新会话工作目录亦已切换。旧 `/home/timidly/agents/dsh-cliworker-now` 仅保留指向新根的兼容软链接，避免当前Web profile的file归档依赖及旧成果链接失效；没有第二份仓库。已装Cursor数字身份包与最终候选包的SHA-256均不变，未修改用户profile、凭据、会话或安装版本。
+- 搬目录后直接pnpm脚本触发依赖状态自动install，并因无TTY拒绝purge模块，未进入测试。没有使用CI=true强制清空或删除旧依赖；改用已安装的Vitest入口和原有锁定依赖执行全套测试，完整命令为 `node node_modules/vitest/vitest.mjs run --maxWorkers=4 --reporter=json --outputFile=.cache/fork-full-tests-final-20261023.json`，umask022，PATH包含本仓库node_modules/.bin。该轮223文件、4617PASS、17SKIP、0FAIL，退出0；不是Windows实机或真实CLI模型验收。
+- 全量检查曾暴露此前关联测试未覆盖的夹具问题：Qoder路由仍断言旧三参数而非新增TaskMode；goal纯单元夹具未给Kimi/MiniMax准备合成来源；两个虚拟bundler entry依赖磁盘已有lib，现显式resolveId；core/role用单次tick而非等待真正spawn；OMP替换测试unlink/recreate可能复用inode和时间戳，现先创建独立inode再原子替换。仅修正六份测试文件，不更改产品门禁或跳过失败断言。Pi/OMP信号清理测试在6文件173项复验及最终完整运行均通过，未放宽停止证明。
+- `.cache/fork-push-preview-20261023` 为新建的隔离预览，生成Remote、Host/Client bundle及post-generation两端typecheck对DSH0.2.1-rc.2通过；283个src副本一致，源树SHA-256仍c9039f0105a1ed36eb1fd50bfb337cb7203f591b536be4f3240de79ebbe77dfe，故最终候选包产品源码未变。所有旧包、旧预览和回退材料保留。
+- 使用仓库Windows工作流既有的依赖检查开关，`pnpm --config.verifyDepsBeforeRun=false spec validate --all --strict --no-interactive` 在新根目录通过28/28；只对本次命令生效，没有改长期pnpm配置或清空依赖。既有migrate重复ADDED的archive提示继续保留，不能冒称这些规格已全部归档。
+- 提交前限定本轮源码、测试、README、设计/验收文档与五项OpenSpec变更；私钥/GitHub token/Google API key/live key/字面JWT五类有限规则扫描未发现匹配。该检查不冒充完整秘密审计；.cache、node_modules、账号、运行日志和本地包不强制加入Git。真实模型、GUI及未完成的权限/平台边界继续保留，不因提交而归档或虚报通过。
+- 目标仍为个人origin的fix/native-accounts-and-cli-adapters分支，upstream只读，不切回或合并main；提交和推送结果由后续Git/远端SHA核验及父会话回复确认，不在提交之前冒称成功。

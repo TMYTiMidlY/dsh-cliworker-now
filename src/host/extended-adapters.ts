@@ -27,6 +27,7 @@ import { prepareGrok, discoverGrok } from './grok-adapter.ts'
 import type { HermesRenewalContext } from './hermes-renewal.ts'
 import { prepareNativeWorker } from './native-worker.ts'
 import { cleanupHermesHttpHome } from './native-hermes-home.mjs'
+import { readOpenCodeVersion, assertOpenCodeV1, OpenCodeCompatibilityError } from './opencode-v2.ts'
 
 export const EXTENDED_CLIS = ['zcode', 'grok', 'omp', 'pi', 'hermes', 'opencode'] as const
 export const isExtendedCli = (cli: string): cli is (typeof EXTENDED_CLIS)[number] =>
@@ -132,6 +133,11 @@ export async function extendedLaunch(
   renewal?: HermesRenewalContext,
   nativeTransport = false,
 ) {
+  // Gate before creating any v1 state, credential snapshot or tool injection.
+  if (cli === 'opencode') {
+    if (!metadataCapture) throw new OpenCodeCompatibilityError('OpenCode 执行准备缺少原生版本核验，已拒绝使用旧协议')
+    assertOpenCodeV1(await readOpenCodeVersion(executable, argv => metadataCapture(argv), renewal?.signal))
+  }
   const state = privateDirectory(stateDirectory)
   const input = {
     executable,
@@ -240,6 +246,8 @@ export async function extendedCatalog(
   renewal?: HermesRenewalContext,
 ): Promise<ModelChoice[]> {
   signal?.throwIfAborted()
+  // v2 metadata has a dedicated read-only path in catalogFor; never initialize v1 data.
+  if (cli === 'opencode') assertOpenCodeV1(await readOpenCodeVersion(executable, capture, signal))
   const catalogRoot = privateDirectory(join(stateDirectory, 'catalog', cli))
   const state = privateDirectory(mkdtempSync(join(catalogRoot, 'query-')))
   const run = async (argv: string[], env?: Record<string, string>) => {

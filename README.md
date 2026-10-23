@@ -58,10 +58,19 @@ dsh-cliworker-now 是 DeepSeek Harness 的**多 CLI 智能体插件**。它把�
 | Antigravity | stream-json | OMP（Oh My Pi） | RPC |
 | Codex | app-server | Pi | RPC |
 | Claude Code | stream-json | Hermes Agent | Runs API |
-| Kimi Code | ACP | OpenCode | HTTP + SSE |
+| Kimi Code | ACP | OpenCode v1 / v2 | HTTP + SSE |
 | 官方 MiMo Code | HTTP + SSE | Qoder CLI | ACP |
 | ZCode | app-server | Qoder CN CLI | ACP |
-| Grok Build | ACP | | |
+| Grok Build | ACP | Cursor Agent（fork 新增） | ACP |
+| MiniMax Code（fork 新增） | ACP | | |
+
+OpenCode v2 已接入 Linux 现有受信原生服务的**显式只读纯文本**任务（`read_only`）、自有会话续聊和有证据的停止。全部原生工具拒绝，不提供文件工具、编辑、shell、MCP、附件、分支或实时引导；会话内模型固定，改模型需新建任务，原生 variants 保持精确标识。缺服务显示不可用而非登出；不自动启动服务，不读取或复制凭据数据库，不回退 v1。未知准入或远端停止未确认会持久隔离，本地桥退出或暂时空闲不能替代停止证据。账号终端由用户主动操作。当前通过的是实际 Host/bridge、官方 DSH 子会话与**合成 v2 服务**的集成回归；真实 OpenCode 服务/模型、GUI 和非 Linux 尚未验收。v1 能力保留。
+
+Kimi 2.2 的 API 状态、模型来源与绑定共用原生凭据解析：识别内联密钥、按提供商类型对应的私有 `env`，以及明确声明的 `apiKeyEnv`。仅显式引用所需的值经过私有子进程环境传递；引用缺值或冲突不改用另一把密钥。API 配置不冒充 OAuth 登录；全局 `KIMI_MODEL_*` 覆盖及额外模型协议暂未开放，真实请求与旧界面问题仍需另行验收。
+
+Cursor Agent 使用 `cursor-agent acp`，保留参数化模型 ID，仅提供默认思考强度；原生账号和模型目录读取已核对，模拟协议回归通过，真实生成、侧栏与 Windows 尚未验收。账号状态来自原生 `status --format json`，不复用 DSH 或其他 CLI 凭据。
+
+MiniMax Code 与 MiMo 独立，支持 `mmx` / `mcode` / `minimax` / `minimax code`；稳定入口为 `~/.minimax-code/bin/mcode`。本 fork 首阶段仅支持标准 prod 原生 token_plan OAuth，数据目录由 `minimaxHome`、当前 `MINIMAX_DATA_DIR` / `MAVIS_DATA_DIR` 或 `~/.minimax` 决定，不自动选其他账号。模型和强度来自认证后的 ACP 实际回执，执行前确认 Ask 权限；Plan、附件、工具注入、分支与 steer 暂未开放。当前默认来源的原生会话门禁要求登录；模拟通过不代表真实模型、侧栏或 Windows 验收。
 
 - **系统**：macOS / Windows。外部 CLI 需安装对应系统的原生版本，并完成该 CLI 自己的登录或 API 配置。
 - **宿主**：DeepSeek Harness（当前随包资源基于 0.2.1-rc.2）；Node.js ≥ 22.19.0。

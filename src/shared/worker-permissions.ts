@@ -12,8 +12,9 @@ export function workerPermissionOptions(
   worker: Pick<Worker, 'preference' | 'transport'>,
 ): WorkerPermissionState['options'] {
   const cli = cliOf(worker.preference)
+  if (worker.transport === 'opencode-http-v2') return [{ value: 'plan', name: '只读纯文本', description: '全部原生工具均拒绝；不提供文件、编辑、shell、MCP或其他工具能力。' }]
   const canPlan =
-    cli !== 'hermes' && cli !== 'harness' && cli !== 'qoder' && cli !== 'qodercn' && (cli !== 'kimi' || worker.transport === 'kimi-acp-v1')
+    cli !== 'minimax' && cli !== 'hermes' && cli !== 'harness' && cli !== 'qoder' && cli !== 'qodercn' && (cli !== 'kimi' || worker.transport === 'kimi-acp-v1')
   return [
     ...(canPlan
       ? [

@@ -15,9 +15,11 @@ import { CLI_LABELS, type CliId } from '../shared/types.ts'
 import { captureCatalogMetadata, resolveCliExecutable } from './adapters.ts'
 import { readCodexAccount } from './codex-account.ts'
 import { assertAgyNativeAccountRoute } from './agy-models.ts'
+import { agyAccountPath } from './agy-account-path.ts'
 import { readWindowsAgyAccount } from './agy-windows-account.ts'
-import { readFirstPartyModelSources } from './first-party-models.ts'
+import { readFirstPartyModelSources, type FirstPartyModelSource } from './first-party-models.ts'
 import { KimiOAuthModelError } from './kimi-oauth-models.ts'
+import { assertKimiEnvironment, KimiCredentialConfigurationError } from './kimi-credentials.ts'
 import { readPiOmpAccountMaterial, safePiOmpAncestors } from './pi-omp-native.ts'
 import { readOpenCodeProfile, OPENCODE_OAUTH_UNSUPPORTED } from './opencode-native.ts'
 import { openCodeAuthDirectory } from './opencode-adapter.ts'
@@ -29,6 +31,9 @@ import { readZCodeBindingMaterial, zcodeAuthDirectory } from './zcode-adapter.ts
 import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
 import { ensureHermesNousFresh, HermesRenewalError } from './hermes-renewal.ts'
 import { readQoderAccountBindingMaterial, QoderAccountError } from './qoder-accounts.ts'
+import { readCursorBindingMaterial, CursorAccountError } from './cursor-accounts.ts'
+import { readMiniMaxBindingMaterial, MiniMaxAccountError } from './minimax-accounts.ts'
+import { readOpenCodeVersion, readOpenCodeV2Metadata, OpenCodeCompatibilityError } from './opencode-v2.ts'
 
 const object = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
 const text = (v: unknown): v is string => typeof v === 'string' && !!v.trim()
@@ -295,8 +300,14 @@ async function material(
   project: string,
   signal: AbortSignal,
   selectedClaudeRoute?: ClaudeOwnRoute,
+  selectedKimiSources?: readonly FirstPartyModelSource[],
 ): Promise<BindingMaterial> {
+  if (selectedKimiSources !== undefined && cli !== 'kimi') throw new CliAccountBindingError(cli)
+  if (cli === 'kimi') assertKimiEnvironment()
   const home = homedir()
+  if (cli === 'minimax') return readMiniMaxBindingMaterial(config, signal)
+  if (cli === 'cursor') return readCursorBindingMaterial(backend, config,
+    await resolveCliExecutable(cli, backend, config, signal), project, signal)
   if ((cli === 'qoder' || cli === 'qodercn')) {
     const executable = await resolveCliExecutable(cli, backend, config, signal)
     return readQoderAccountBindingMaterial(executable, signal, { cli, backend, config, project })
@@ -313,8 +324,9 @@ async function material(
             : [],
       }
     }
-    const root = join(home, '.gemini')
-    const auth = await document(join(root, 'jetski-standalone-oauth-token'), signal)
+    const path = agyAccountPath(home)
+    const root = dirname(path)
+    const auth = await document(path, signal)
     const principal =
       auth.auth_method === 'consumer' && object(auth.token)
         ? oauthPrincipal({ ...auth.token, id_token: auth.id_token })
@@ -399,7 +411,7 @@ async function material(
         return { sourceIds: source.sourceIds, entries: entry ? [entry] : [] }
       }
     }
-    const sources = await readFirstPartyModelSources(
+    const sources = selectedKimiSources ?? await readFirstPartyModelSources(
       cli,
       executable,
       project,
@@ -453,6 +465,13 @@ async function material(
     return { sourceIds: source.sourceIds, entries }
   }
   if (cli === 'opencode') {
+    const executable = await resolveCliExecutable(cli, backend, config, signal)
+    const version = await readOpenCodeVersion(executable, argv => captureCatalogMetadata(backend, config, argv, project, signal), signal)
+    if (version.major === 2) {
+      const snapshot = await readOpenCodeV2Metadata(executable, version, project, signal, { maxBytes: config.maxRunBytes, includeAgent: true })
+      if (!snapshot.bindingMaterial.entries.length) throw new OpenCodeCompatibilityError('OpenCode v2 当前原生服务没有受支持的 credential 账号来源；目录未获准，不使用其他来源')
+      return snapshot.bindingMaterial
+    }
     const profile = await readOpenCodeProfile(openCodeAuthDirectory(config.stateDirectory), { signal })
     const entries: BindingEntry[] = []
     let hasOAuth = false
@@ -576,10 +595,12 @@ export async function readCliAccountBinding(
   project: string,
   signal: AbortSignal,
   selectedClaudeRoute?: ClaudeOwnRoute,
+  /** Private preparation snapshot only, never accepted from Gateway/tool input. */
+  selectedKimiSources?: readonly FirstPartyModelSource[],
 ): Promise<string> {
   signal.throwIfAborted()
   try {
-    const value = await material(cli, backend, config, project, signal, selectedClaudeRoute)
+    const value = await material(cli, backend, config, project, signal, selectedClaudeRoute, selectedKimiSources)
     signal.throwIfAborted()
     if (!value.entries.length || !value.sourceIds.length) throw new CliAccountBindingError(cli)
     const sources = [
@@ -592,10 +613,10 @@ export async function readCliAccountBinding(
     signal.throwIfAborted()
     if (
       error instanceof CliAccountBindingError ||
-      error instanceof KimiOAuthModelError ||
+      error instanceof KimiOAuthModelError || error instanceof KimiCredentialConfigurationError ||
       error instanceof ClaudeOwnRouteError ||
       error instanceof HermesRenewalError
-      || error instanceof QoderAccountError
+      || error instanceof QoderAccountError || error instanceof CursorAccountError || error instanceof MiniMaxAccountError || error instanceof OpenCodeCompatibilityError
     )
       throw error
     throw new CliAccountBindingError(cli)

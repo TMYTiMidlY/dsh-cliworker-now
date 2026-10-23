@@ -35,7 +35,7 @@ export async function authorizedCatalog(
   if (cli !== 'qoder' && cli !== 'qodercn' && binding !== (await readCliAccountBinding(cli, backend, config, project, signal)))
     throw new Error(ACCOUNT_CHANGED)
   if (catalog.cli !== cli) throw new Error('CLI 模型目录身份不匹配')
-  if (!catalog.models.length) throw new Error('暂无可确认的可用模型，请登录或刷新')
+  if (!catalog.models.length && !catalog.executionUnavailable) throw new Error('暂无可确认的可用模型，请登录或刷新')
   return { catalog, binding }
 }
 

@@ -1,7 +1,8 @@
 import { lstat, open } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
+import { agyAccountPath } from './agy-account-path.ts'
 import type { CliId } from '../shared/types.ts'
 import type { AccountStatus } from '../shared/accounts.ts'
 import { safePiOmpAncestors } from './pi-omp-native.ts'
@@ -56,7 +57,7 @@ export function localAccountIdentity(
   return async (cli, signal) => {
     if (cli !== 'antigravity') return undefined
     const home = options.home ?? homedir()
-    const path = join(home, '.gemini', 'jetski-standalone-oauth-token')
+    const path = agyAccountPath(home)
     let handle
     let buffer: Buffer | undefined
     try {

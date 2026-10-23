@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, existsSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, existsSync, realpathSync, renameSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -195,8 +195,11 @@ describe('distinct Pi and OMP entry identities', () => {
     writeFileSync(executable, Buffer.concat([Buffer.from('7f454c46', 'hex'), Buffer.from('replacement-two')]))
     await verifyPiOmpExecutable('omp', executable, capture)
     expect(capture).toHaveBeenCalledTimes(2)
-    rmSync(executable)
-    writeFileSync(executable, Buffer.concat([Buffer.from('7f454c46', 'hex'), Buffer.from('replacement-two')]))
+    // Keep the old inode allocated while creating its replacement. Unlink/recreate
+    // can reuse both inode and timestamp on fast filesystems, making this fixture unchanged.
+    const replacement = join(directory, 'replacement-omp')
+    writeFileSync(replacement, Buffer.concat([Buffer.from('7f454c46', 'hex'), Buffer.from('replacement-two')]))
+    renameSync(replacement, executable)
     capture.mockResolvedValueOnce('pi - unrelated CLI')
     await expect(verifyPiOmpExecutable('omp', executable, capture)).rejects.toThrow('OMP 安装身份')
     await verifyPiOmpExecutable('omp', executable, capture)

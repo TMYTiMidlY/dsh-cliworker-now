@@ -174,7 +174,7 @@ function fixture(overrides: Partial<RuntimeConfig> = {}, onQueryCleanup?: Constr
                 JSON.stringify({ id: 1, result: {} }) + '\n',
                 JSON.stringify({ id: 2, result: codexAccount }) + '\n',
               ]
-            : [raw],
+            : spec.argv[0] === '/synthetic/opencode' && spec.argv.at(-1) === '--version' ? ['1.18.21\n'] : [raw],
         ),
         stderr: Readable.from([]),
         control: undefined,
@@ -926,6 +926,7 @@ describe('user-operated account terminals (synthetic PTY)', () => {
     ['antigravity', 'logout', []],
   ] as const)('%s %s uses only its verified argv and never injects input', async (cli, action, expected) => {
     const f = fixture()
+    if (cli === 'kimi') f.status(JSON.stringify({ providers: {}, models: {} }))
     const opened = await f.manager.start('parent', cli, action, f.cwd, f.signal)
     const spec = vi.mocked(f.backend.spawnTerminal!).mock.calls[0][0]
     expect(spec.argv.slice(cli === 'claude' ? 3 : 1)).toEqual(expected)
@@ -1009,6 +1010,7 @@ describe('user-operated account terminals (synthetic PTY)', () => {
 
   it('watch cancellation stops the owned terminal and waits for cleanup', async () => {
     const f = fixture()
+    f.status(JSON.stringify({ providers: {}, models: {} }))
     const { id } = await f.manager.start('p', 'kimi', 'manage', f.cwd, f.signal)
     const controller = new AbortController()
     const watch = f.manager.watch('p', id, controller.signal)[Symbol.asyncIterator]()
@@ -1275,7 +1277,7 @@ describe('extended CLI account capabilities (synthetic credentials and PTYs)', (
       }
       expect(account.state).not.toBe('authenticated')
     }
-    expect(f.backend.spawn).not.toHaveBeenCalled()
+    expect(f.backend.spawn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ argv: ['/synthetic/opencode', '--version'] }))
     expect(f.backend.spawnTerminal).not.toHaveBeenCalled()
   })
 

@@ -1051,3 +1051,48 @@ OpenSpec：`openspec/changes/bridge-conversation-features/`。
 - `HarnessWorkerFork.turns()` 原先把任何有 `end` 和 closing 助手消息的轮次当成完成轮。现与 Host `selectForkHistory` 一致，要求 `turn/end.data.reason.kind === 'completed'` 且有助手消息。失败或中断轮不会映射为最新轮空串截点，DOM guard 保持其按钮禁用。
 - 安装包 `dsh-client-ui-workspace/lib/client.js` 的 `openSession` 调用 `replaceMain`，以 `mainView` retain 子会话并 reveal 原生 Conversation；`Panel.openWorker` 只修改面板内部选择，`activeHarnessSessionId` 只是同步选中状态，不会替换原生主视图。原生 Conversation 默认“+”菜单使用 `command`，并未取得插件面板传入的 `cliworker-settings`。
 - 复用随包 runtime 已有的 `commandSource` owner 属性，通过公开 `conversation.composer.bar` 槽位为已绑定 Worker 的 CLI 子会话设置桥接源。主视图、原生侧栏及插件面板共用该槽位；保留原组件、inject、子槽和菜单 controller，普通/无会话保留原始 props。绑定晚到会更新，卸载释放替换。保持现有分支打开方式，不修改 Harness 核心、node_modules 或 runtime-host。
+
+### Fork Cursor Agent ACP 接入（2026-10-22）
+
+- 规范 ID `cursor` 与独立 `cursorExecutable`；POSIX 稳定入口为 `~/.local/bin/cursor-agent`。不将 Cursor IDE 或 generic agent 当作缺失 CLI 的备用入口；Windows 自动发现保持关闭。
+- `cursor-accounts.ts` 仅通过原生 status JSON 读取安全身份，私有 userId 哈希进入既有 account epoch；原始用户资料、token、端点不返回 Client。令牌存在但缺用户身份显示 configured，不能生成稳定账号绑定。API key/自定义端点暂拒绝。
+- `cursor-models.ts` 使用受管子进程读取零 prompt ACP v1 initialize/session-new。前后重查账号，参数化模型 ID 保持整体，仅 default effort；bounded IO、timeout、失败和 cleanup 不降低为成功。新建空原生会话可能留痕，不删除原生历史。
+- `native-cursor.mjs` 走独立 cursor-acp-v1，并复用 native-acp 的 loadSession、流事件、终态与 cancel。Cursor 单独验证 select schema、model/currentValue 和 mode/currentValue，modeConfigId=mode、editMode=agent、plain-string encode；额外权限明确拒绝，不使用 --force/yolo。
+- DSH 工具/MCP 注入、附件、fork 与实时 steer 均未验证并关闭；设置沿用既有公共组件与字母图标 C。真实模型/取消/续聊、浏览器与 Windows 不由模拟回归代替。
+
+### Fork MiniMax Code ACP 接入及新通路私密数据边界（2026-10-22）
+
+- 独立 minimax/mmx/mcode，不等于 MiMo；默认稳定 mcode 路径与显式 minimaxHome，同一有效数据根/region/env贯通账号、目录、绑定、终端和任务。标准 prod file token_plan OAuth 为首阶段支持子集；API/custom默认来源、提供商与模型级认证/endpoint/header覆盖拒绝；只开放 ACP 原生 minimax provider，不借旧 OAuth 授权其他路由。config内容摘要与文件版本进入绑定，查询前后核对，可发现 A→B→A。
+- 当前原生 state v2、credential envelope/record v1精确验证；私有no-follow有界读取，核验前后文件/目录身份。至少一分钟有效期与原生范围必需；续期交给原生 CLI，缺少稳定主体保持 configured，不以 token/generation/hash冒充用户。verified身份缓存必须与当前token指纹及region/env精确对应，缓存本身不是认证。
+- minimax-state解析真实opaque选项（包括空variant），逐模型刷新thinkingEffort；native-minimax通过可选configure/update hook复用ACP生命周期，但自身要求protocol1/minimax-code，model/effort/Ask permission/default mode确认后才prompt。Plan延迟语义不开放；附件、注入、fork、steer关闭，非预期客户端能力请求拒绝。续聊/取消/失败终态沿用严格身份与清理规则。
+- 新Cursor/MiniMax run仅投影解析后的公开事件，nativeIO按这两个CLI启用raw-wire/stderr私密策略；异常文案固定且桥stderr不转发原始认证诊断。其他CLI默认遥测不变。端到端合成桥测试同时检查stdout/stderr/native/raw/diagnostic，不只检查result。
+- Cursor元数据仅允许完整回执且真实本次受管SIGTERM/SIGKILL或对应退出状态，不能因ownStop吞掉exit1/未知signal；原生status确实缺少有效稳定int32 ID时configured/no principal仍为正确拒绝。此前误以为ID只能是字符串的缺陷已修正，本机数字ID及原生目录已核对；选型工具超时尚未创建Cursor Worker，目录成功不能代替真实生成验收。
+
+### Fork OpenCode v2 原生服务元数据与版本门禁（2026-10-22）
+
+- `opencode-v2.ts` 识别明确1/2版本；默认PATH缺失才考虑官方 `~/.opencode/bin/opencode`，不覆盖手动选择。v2只读Linux默认service registry，核验no-follow/UID/mode/父目录/文件版本、原生进程exe、PID、semver和固定127.0.0.1来源，Basic密码只留Host内存。仅固定GET info/integration/provider/model，禁止凭据API、数据库读取或新建原生服务。
+- 相同project包装元数据按当前首个credential connection关联provider/model。key/oauth无needs_auth且无auth/endpoint/header覆盖才进入诊断；模型与数组variants保留可逆精确tuple，包括空变体；不猜effort/cost。全查询输入和衍生候选数量/字节全局有界，前后核验来源变化，原始settings、headers、label、错误或密码不返回Client。
+- metadata-scope指纹只防目录混用；可执行models为空，notice和nativeModelCount说明只读阶段。authorizedCatalog允许此明确诊断空目录，validatePreference/authorizeSelection及extendedCatalog/extendedLaunch阻止v2误走v1；任务和旧会话均在v1快照/临时DB/工具注入之前拒绝，不创建假的v2 transport/会话。原生终端只开放manage，用户自己操作原生界面，不注入auth命令，不设置v1 XDG/DB。
+- v2完整执行代码尚待实现，并非API已被证明不支持：正常UI connect-key/OAuth-complete创建新credential record、公开PATCH只改label、refresh复用record，后续可通过同一服务+record ID+重检和切换观察遵循既有实际竞态契约。还需实现owned session、原生deny-only策略、durable log/输入幂等恢复、远端取消settlement与quarantine，再开放版本固定能力；本阶段不将数学原子pin列为外部阻塞，也不借元数据勾掉这些代码任务。
+- 保留v1适配、全部原生账号历史及既有AGY/Cursor/MiniMax源码/安装产物。模拟服务不代表真实v2服务、模型、GUI或非Linux验收；未来安装由父会话另行确认。
+
+### Fork Kimi 2.2 原生 API 凭据一致解析（2026-10-22）
+
+- `kimi-credentials.ts` 按已核对的2.2.0原生配置解析内联值、显式apiKeyEnv和对应provider.type的私有env；先核对冲突，再判断已选值是否支持。无效已选值/缺失引用绝不改用另一把密钥，不从未声明的宿主默认变量推断账号。配置env是字面值；声明引用才读取相应进程变量，名称和值按原生trim，Google候选保留先raw-hit后trim顺序，不发明vertexai类型映射。
+- Host status、目录、binding共用分类器；API维持configured/local，未知OAuth来源保持unknown，managed OAuth的文件与额度门禁不放宽。没有OAuth令牌不能被误用来否定有效API配置；配置冲突不能把旧OAuth当作当前成功。全局KIMI_MODEL_*覆盖先明确拒绝，不静默抹掉用户设置。
+- 声明来自原生用户配置服务的provider-list；该服务读取app-scoped用户配置及显式环境/可信app内存，不合并项目local.toml的provider。仅选定模型的声明变量进入launch.env，账号终端仅聚合自身明确声明项并限制总量；保留DSH/CLIWORKER/ELECTRON运行时名字及其大小写别名，不恢复整个宿主环境。桥请求与argv不携带环境值。
+- 任务同时核对准备好的私有源快照及最后当前源，防止A→B→A中携带B环境执行A任务；新apiKeyEnv来源名称也参与绑定。原有普通内联API源指纹不额外迁移。原生桥继承选定env，既有敏感父环境清除仍有效。
+- 账号终端分配前的元数据进程如果未确认清理，也要保留该CLI的unsafe query门禁并报告给runtime；不得因尚无PTY对象就释放为可用。其他CLI不被该门禁连带阻塞。
+- 实际旧GUI“未登录”尚未复现；源码已重现并修正的是明确的类型env/引用/冲突差异。合成状态、真实WorkerRuntime的模拟后端及独立构建不等同真实Kimi模型或Windows验收；不改原生配置/凭据，不安装、提交或发布本阶段源码。
+
+### Fork OpenCode v2 显式只读纯文本自有会话（2026-10-22）
+
+本节覆盖前述元数据阶段“执行待实现”的历史状态，未扩展为完整读写或工具执行。
+
+- Host 与独立 Node bridge 共用纯 MJS service core。受信 Linux registry/进程/版本/固定回环检查保留，直接 Node HTTP 不走 Host fetch/proxy。元数据总预算与派生候选上限保留；provider 密钥、数据库和 credential value API 不读取。Basic 密码/私有服务地址与每轮 fresh proof key 只走私有环境，不入 argv/request/Gateway/ledger，v2 专用 raw-wire/error/stderr 策略不影响 v1 遥测。
+- 稳定 binding 含当前首个 key/oauth credential record/method、provider/model/默认首项 agent 摘要，不含服务 epoch；已完成 owned 会话正常同来源重启可续聊。每轮另固定 PID/version/registry/secret epoch，watcher 先验证连接屏障，头部等待有界可取消，再复核来源；model.updated 以及其他来源/策略变化、A→B→A 或观察断开均取消，不静默换号。
+- 版本授权后、preparation 前固定 opencode-http-v2。真实 DSH child 仍由 bridge.ensure 创建并设只读，但之后立即返回，不分配 tool/MCP lease。原生 session 最后唯一规则为 action/resource 星号的 deny，不复制旧 ALLOW；所有工具拒绝。仅显式 read_only 纯文本；编辑在 picker/保存前拒绝，附件在 preparation 前拒绝。公开 model/steer/attachments/fork/tools/skills 均关闭，会话模型固定，backend 和控件都拒绝改模型；v1 保持。opaque ID 不大小写折叠或按路由合并，variant/空 variant 精确保留。
+- 只创建随机 ses/msg_ schema 前缀的 owned top-level session，create 返回已有对象也必须核对 marker/location/agent/model/deny/no-parent，绝不收养或删除用户历史。ledger 在可能写入前记 pending；续聊从签署水位检查新历史，不能在 baseline 跳过已完成外来 user/synthetic 输入或变更；即使 idle/空 inbox/marker 相同也拒绝并 invalid。
+- 每轮 input 只 POST 一次，正文摘要不可变。ACK 仅准入，不是完成；丢失时按同 ID 的 inbox/user message/durable log 核对，取消后也不重发。原生 started 先于 delivery，不编造 executionID。durable log 的 log.synced 是捕获水位，过滤行允许非连续 seq；会话/aggregate/location/序号冲突拒绝。只投影最终 text/reasoning ended 并去重，不伪装实时 delta、不补造 usage。成功还需最后精确模型 step 与非空最终正文；缺失或冲突为模型结果不确定。
+- 远端清理独立于 local bridge：必须先获得 own input 正向准入，再在其后的清理周期 cancel-own/interrupt(resume=false)/同 PID wait，复核 active、inbox 和日志。没有准入证据时 native 异步准备可能晚到，cancel204/暂时 idle 不签 settled。已知准入而 terminal 发布失败可单独确认前台清理，但不冒称模型成功。Host 验证私有 HMAC（绑定 source/epoch/session/run/input/payload/水位/关键标志），不信原始 SSE/result；桥 kill、启动不确定、PID 替换、缺清理证据及任何 tool 活动均保持隔离，executed:false 不代表本地未执行。
+- cleanup-only 可在账号已改变后停止原服务/marker 的自身输入，永不生成新 prompt、不杀共享 service、不删历史。没有会话的 pre-spawn 不确定、GET404 或替换服务空闲不自动解除，属于当前保守恢复限制。仅证明受控纯文本前台，不声称任意插件/detached OS 作业停止。真实 OpenCode 服务/模型/GUI/非 Linux 仍未验收；实际 Host、官方 DSH child 与合成服务回归及隔离 build 只是源码检查点。

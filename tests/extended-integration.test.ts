@@ -396,6 +396,7 @@ describe('extended worker boundaries (simulated protocol)', () => {
           release = resolve
         })
         const capture = async (argv: string[], env?: Record<string, string>) => {
+          if (argv.at(-1) === '--version') return '1.18.21'
           expect(argv.slice(-3)).toEqual(['/synthetic/opencode', 'models', '--verbose'])
           const query = dirname(env!.OPENCODE_CONFIG_DIR!)
           roots.push(query)
@@ -439,6 +440,7 @@ describe('extended worker boundaries (simulated protocol)', () => {
       try {
         seedSyntheticOpenCode(root)
         const capture = async (_argv: string[], env?: Record<string, string>) => {
+          if (_argv.at(-1) === '--version') return '1.18.21'
           native = join(dirname(env!.OPENCODE_CONFIG_DIR!), 'still-owned')
           writeFileSync(native, 'synthetic')
           chmodSync(native, 0o644)
@@ -487,6 +489,8 @@ describe('extended worker boundaries (simulated protocol)', () => {
           'synthetic task',
           join(root, 'state'),
           { ...DEFAULT_CONFIG, stateDirectory: root },
+          undefined,
+          async () => '1.18.21',
         )
         try {
           expect(launch.argv[0]).toBe(process.execPath)

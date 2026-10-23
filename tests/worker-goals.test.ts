@@ -28,6 +28,14 @@ vi.mock('../src/host/adapters.ts', async original => ({
 }))
 vi.mock('../src/host/first-party-models.ts', async original => ({
   ...(await original<object>()), assertFirstPartyConfiguration: async () => {}, firstPartyEnvironment: () => ({}),
+  // Goal injection tests use an explicit synthetic model source, not the user's native config.
+  readFirstPartyModelSources: async () => [{
+    sourceIds: ['synthetic:kimi:goal-test'], modelEnvironment: {},
+    nativeModels: [{ remoteId: '模拟模型', choice: { id: '模拟模型', efforts: ['default'] } }],
+  }],
+}))
+vi.mock('../src/host/minimax-accounts.ts', async original => ({
+  ...(await original<object>()), minimaxSource: async () => ({ env: {} }),
 }))
 vi.mock('../src/host/claude-own-route.ts', () => ({
   readClaudeOwnRoute: async () => ({ kind: 'proxy' }),

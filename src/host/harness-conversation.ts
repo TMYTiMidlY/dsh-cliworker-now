@@ -561,12 +561,18 @@ export class HarnessConversationBridge implements HarnessConversationApi {
   private binding(record: HarnessConversationRecord) {
     const worker = this.deps.getWorker(record.parentSessionId, record.workerId)
     const cli = cliOf(worker.preference)
-    return harnessConversationBinding(
+    const binding = harnessConversationBinding(
       record,
       !!this.deps.steer && !!this.deps.steering && this.deps.steering(record) !== 'unsupported',
       nativeAttachmentCapability(cli) && worker.transport === transportFor(cli),
       bridgedFeatureSupport(worker),
     )
+    if (cli === 'cursor' || cli === 'minimax' || worker.transport === 'opencode-http-v2') binding.capabilities.steer = false
+    if (worker.transport === 'opencode-http-v2') {
+      binding.capabilities.model = false
+      binding.reasons = { ...binding.reasons, model: 'OpenCode v2 此自有纯文本会话固定模型，修改请新建任务', steer: 'OpenCode v2 尚未开放实时引导' }
+    }
+    return binding
   }
 
   /** Claim exactly one message through the same durable event as native Inbox.claim. */

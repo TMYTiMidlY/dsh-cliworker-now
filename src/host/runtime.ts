@@ -41,6 +41,9 @@ import {
 import { protocolFor, resolveCliExecutable, workerArguments, captureCatalogMetadata } from './adapters.ts'
 import { spawnManagedAgent } from './managed-agent.ts'
 import { prepareNativeWorker, transportFor, usesNativeBridge } from './native-worker.ts'
+import { prepareOpenCodeV2Worker, recoverOpenCodeV2Remote, reconcileOpenCodeV2Remote } from './opencode-v2-launch.ts'
+import { readOwnedLedger, unsettledOwnedLedgers, OPENCODE_V2_REMOTE_UNCERTAIN } from './opencode-v2-ledger.mjs'
+import { readOpenCodeVersion } from './opencode-v2.ts'
 import { BridgeProtocol } from './bridge-protocol.ts'
 import { mkdirSync } from 'node:fs'
 import {
@@ -62,7 +65,8 @@ import { projectPublicToolCall } from './public-tool-projection.ts'
 import { WorkerStorage } from './storage.ts'
 import { authorizeSelection, ACCOUNT_CHANGED } from './authorized-catalog.ts'
 import { readCliAccountBinding } from './cli-account-binding.ts'
-import { assertFirstPartyConfiguration, firstPartyEnvironment } from './first-party-models.ts'
+import { assertFirstPartyConfiguration, firstPartyEnvironment, readFirstPartyModelSources, kimiModelEnvironment } from './first-party-models.ts'
+import { minimaxSource } from './minimax-accounts.ts'
 import { agyBackgroundEnvironment } from './agy-background-environment.ts'
 import { qoderEnvironment } from './qoder-accounts.ts'
 import { AgyProtocol } from './protocol.ts'
@@ -182,6 +186,8 @@ export class WorkerRuntime {
   >()
   private stopOperations = new Map<string, Set<symbol>>()
   revision = 0
+  private remoteOpenCodeBlocked = false
+  private remoteOpenCodeRecovery: Promise<void>
   constructor(
     readonly storage: WorkerStorage,
     private backend: ProcessBackend,
@@ -226,6 +232,9 @@ export class WorkerRuntime {
           this.updatePriority(worker, message, 'cancelled', 'Host 已重启，本条消息未自动重发')
       }
     }
+    this.remoteOpenCodeRecovery = recoverOpenCodeV2Remote(storage.directory).then(records => {
+      this.remoteOpenCodeBlocked = records.length > 0
+    }).catch(() => { this.remoteOpenCodeBlocked = true })
     const cleanup = storage.cleanupBlockState()
     if (cleanup !== 'none')
       this.blocked =
@@ -863,6 +872,7 @@ export class WorkerRuntime {
     if (this.disposed) throw new Error('插件正在关闭')
     if (this.blocked) throw new Error(this.blocked)
     if (this.catalogBlocked.has(cli)) throw new Error(this.catalogBlocked.get(cli))
+    if (cli === 'opencode' && this.remoteOpenCodeBlocked) throw new Error(OPENCODE_V2_REMOTE_UNCERTAIN)
     if (isRetiredCli(cli)) throw new Error(RETIRED_HARNESS_NOTICE)
     if (!this.storage.cliSettings().enabled[cli])
       throw new Error(`${CLI_LABELS[cli]} 已关闭，请先在 CLI Worker 设置中开启`)
@@ -906,6 +916,7 @@ export class WorkerRuntime {
     if (this.disposed) throw new Error('插件正在关闭')
     if (this.blocked) throw new Error(this.blocked)
     if (this.catalogBlocked.has(cli as CliId)) throw new Error(this.catalogBlocked.get(cli as CliId))
+    if (cli === 'opencode' && this.remoteOpenCodeBlocked) throw new Error(OPENCODE_V2_REMOTE_UNCERTAIN)
     if (
       [...this.storage.workers.values()].some(
         (worker) => !!this.busyReason(worker) && cliOf(worker.preference) === cli,
@@ -1388,6 +1399,7 @@ export class WorkerRuntime {
     if (this.followups.list(id).length)
       throw new Error('请先发送或取消待发送消息（包含已暂停消息），再修改模型与强度')
     if (cliOf(worker.preference) !== cliOf(preference)) throw new Error('已有会话不能切换 CLI')
+    if (worker.transport === 'opencode-http-v2' && (preference.model !== worker.preference.model || preference.effort !== worker.preference.effort)) throw new Error('OpenCode v2 自有纯文本会话固定模型与强度，修改请新建任务')
     this.assertCliEnabled(cliOf(preference))
     const updated = { ...worker, preference: { ...preference } }
     if (worker.preference.model !== preference.model) {
@@ -1696,7 +1708,17 @@ export class WorkerRuntime {
     this.changed()
     const task = this.tasks.get(id)
     if (!task)
-      return Promise.all([preparation?.done, dispatch]).then(() => {
+      return Promise.all([preparation?.done, dispatch, this.remoteOpenCodeRecovery]).then(async () => {
+        if (worker.transport === 'opencode-http-v2') {
+          const owned = await readOwnedLedger(this.storage.directory, worker.id)
+          if (owned?.status === 'uncertain' || owned?.status === 'pending') {
+            await reconcileOpenCodeV2Remote(this.storage.directory, worker.id)
+            this.remoteOpenCodeBlocked = (await unsettledOwnedLedgers(this.storage.directory)).length > 0
+            worker.status = 'interrupted'; worker.error = undefined
+            this.storage.save(worker); this.changed()
+            return structuredClone(worker)
+          }
+        }
         const blocked = this.blocked ?? this.catalogBlocked.get(cliOf(worker.preference))
         if (preparation && blocked) throw new Error(blocked)
         return before
@@ -1864,7 +1886,9 @@ export class WorkerRuntime {
     const pendingFork = readWorkerForkState(this.storage.directory, worker.id)
     const resumeConversation = worker.conversationId ?? pendingFork?.sourceConversationId
     const expectedConversation = worker.conversationId
-    const nativeTransport = usesNativeBridge(worker)
+    let nativeTransport = usesNativeBridge(worker)
+    let remoteSettlement: (() => Promise<void>) | undefined
+    let remoteUncertain = false
     const createProtocol = nativeTransport
       ? (
           _cli: CliId,
@@ -1905,11 +1929,12 @@ export class WorkerRuntime {
     let quiescent = false
     let metadataReady = false
     try {
+      await this.remoteOpenCodeRecovery
       const admitted = await task.admission
       controller.signal.throwIfAborted()
       const previousBinding = this.storage.accountBinding(worker.id)
       if (previousBinding && previousBinding !== admitted) throw new Error(ACCOUNT_CHANGED)
-      const { binding, preference: authorizedPreference } = await authorizeSelection(
+      const { binding, catalog: authorizedCatalog, preference: authorizedPreference } = await authorizeSelection(
         worker.preference,
         this.backend,
         this.config,
@@ -1929,6 +1954,13 @@ export class WorkerRuntime {
       )
       controller.signal.throwIfAborted()
       await assertFirstPartyConfiguration(cliOf(worker.preference), worker.project, controller.signal)
+      if (authorizedCatalog?.allowedModes && !authorizedCatalog.allowedModes.includes(worker.mode)) throw new Error('OpenCode v2 仅支持显式只读纯文本，不支持编辑或工具')
+      if (authorizedCatalog?.transport === 'opencode-http-v2') {
+        if (worker.conversationId && worker.transport !== 'opencode-http-v2') throw new Error('不能把v1历史会话重解释为OpenCode v2')
+        worker.transport = 'opencode-http-v2'; nativeTransport = true
+        if (task.attachments?.length || this.config.harnessTools) throw new Error('OpenCode v2 纯文本会话不支持附件或工具注入')
+        this.storage.save(worker); this.changed()
+      } else if (worker.transport === 'opencode-http-v2') throw new Error('OpenCode v2会话不能通过旧协议续接')
       metadataReady = true
       harnessLease = await this.harnessPreparation?.(worker, controller.signal, { submissionId: task.submissionId })
       const executionConfig = { ...this.config,
@@ -1957,7 +1989,22 @@ export class WorkerRuntime {
           ))
       )
         throw new Error(ACCOUNT_CHANGED)
-      const launch = isExtendedCli(cliOf(worker.preference))
+      const selectedKimiSources = cliOf(worker.preference) === 'kimi'
+        ? await readFirstPartyModelSources('kimi', executable, worker.project,
+            (argv, env) => captureCatalogMetadata(this.backend, executionConfig, argv, worker.project, controller.signal, env),
+            controller.signal)
+        : undefined
+      // Check the material actually prepared, not merely a later current read.
+      // Otherwise A→B→A could leave a private B environment in an A task.
+      if (selectedKimiSources && binding !== await readCliAccountBinding('kimi', this.backend,
+          executionConfig, worker.project, controller.signal, undefined, selectedKimiSources))
+        throw new Error(ACCOUNT_CHANGED)
+      const launch = worker.transport === 'opencode-http-v2'
+        ? await prepareOpenCodeV2Worker({ executable, version: await readOpenCodeVersion(executable,
+            argv => captureCatalogMetadata(this.backend, this.config, argv, worker.project, controller.signal), controller.signal),
+            project: worker.project, preference: worker.preference, mode: worker.mode, prompt: task.prompt,
+            root: this.storage.directory, workerId: worker.id, runId: worker.runId!, stateDirectory: this.nativeStateDirectory(worker), conversationId: resumeConversation }, executionConfig, controller.signal)
+        : isExtendedCli(cliOf(worker.preference))
         ? await extendedLaunch(
             cliOf(worker.preference),
             executable,
@@ -1996,6 +2043,8 @@ export class WorkerRuntime {
           : {
               env: {
                 ...firstPartyEnvironment(cliOf(worker.preference)),
+                ...(selectedKimiSources ? kimiModelEnvironment(selectedKimiSources, worker.preference.model) : {}),
+                ...(cliOf(worker.preference) === 'minimax' ? (await minimaxSource(executionConfig, controller.signal)).env : {}),
                 ...agyBackgroundEnvironment(cliOf(worker.preference)),
                 ...(['qoder', 'qodercn'].includes(cliOf(worker.preference)) ? qoderEnvironment(cliOf(worker.preference) as 'qoder' | 'qodercn') : {}),
               },
@@ -2045,6 +2094,7 @@ export class WorkerRuntime {
             )
           : launch
       release = 'cleanup' in execution ? execution.cleanup : undefined
+      if ('confirmRemoteSettlement' in execution && typeof execution.confirmRemoteSettlement === 'function') remoteSettlement = execution.confirmRemoteSettlement
       controller.signal.throwIfAborted()
       if (
         binding !==
@@ -2187,6 +2237,13 @@ export class WorkerRuntime {
         }
         await Promise.allSettled([...readers, handle.done])
       }
+      if (remoteSettlement) {
+        try { await remoteSettlement() }
+        catch {
+          remoteUncertain = true; this.remoteOpenCodeBlocked = true
+          failure = new Error(OPENCODE_V2_REMOTE_UNCERTAIN)
+        }
+      }
       // Preserve only this process's observed AGY text when its aggregate is
       // unsuccessful or absent. Native result text can include older turns.
       if (protocol instanceof AgyProtocol)
@@ -2204,7 +2261,7 @@ export class WorkerRuntime {
       releaseFailed = true
     }
     try {
-      if ((!handle || quiescent) && !this.blocked) await release?.()
+      if ((!handle || quiescent) && !this.blocked && !remoteUncertain) await release?.()
     } catch (error) {
       failure = error
       releaseFailed = true
@@ -2222,6 +2279,9 @@ export class WorkerRuntime {
     if (this.blocked) {
       status = 'failed'
       error = this.blocked
+    } else if (remoteUncertain) {
+      status = 'uncertain'
+      error = OPENCODE_V2_REMOTE_UNCERTAIN
     } else if (failureBeforeStop || releaseFailed) {
       status = 'failed'
       error = String(failure)

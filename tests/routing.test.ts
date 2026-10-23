@@ -76,7 +76,7 @@ describe('one CLI name registry', () => {
       expect(() => requireCliName(name)).toThrow('无法确定 CLI，可用名称：')
     }
     expect(resolveCliName('agy/codex')).toEqual({ status: 'ambiguous', candidates: ['antigravity', 'codex'] })
-    expect(resolveCliName('code')).toEqual({ status: 'ambiguous', candidates: ['codex', 'zcode'] })
+    expect(resolveCliName('code')).toEqual({ status: 'ambiguous', candidates: ['codex', 'zcode', 'minimax'] })
     expect(resolveCliName('glm 或 zcode')).toEqual({ status: 'ambiguous', candidates: ['zcode'] })
     for (const name of ['harness', 'DeepSeek Harness CLI']) {
       expect(resolveCliName(name)).toMatchObject({ status: 'retired' })
@@ -442,12 +442,12 @@ describe('native prompt/tool integration', () => {
       ['Antigravity（agy）CLI', 'antigravity'],
     ]) {
       expect(await f.start(alias)).toBe('synthetic-background-receipt')
-      expect(f.chooseDispatch).toHaveBeenLastCalledWith(f.agent, expect.any(AbortSignal), cli)
+      expect(f.chooseDispatch).toHaveBeenLastCalledWith(f.agent, expect.any(AbortSignal), cli, 'accept-edits')
       expect(f.launch.mock.calls.at(-1)![3]).toMatchObject({ cli })
     }
     for (const cli of CLI_IDS) {
       await f.start(cli)
-      expect(f.chooseDispatch).toHaveBeenLastCalledWith(f.agent, expect.any(AbortSignal), cli)
+      expect(f.chooseDispatch).toHaveBeenLastCalledWith(f.agent, expect.any(AbortSignal), cli, 'accept-edits')
       expect(f.launch.mock.calls.at(-1)![3]).toMatchObject({ cli })
     }
   })

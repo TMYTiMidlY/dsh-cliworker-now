@@ -4,12 +4,11 @@ import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import type { AccountIdentity } from './account-identity.ts'
 import { safePiOmpAncestors } from './pi-omp-native.ts'
+import { assertKimiEnvironment, resolveKimiCredential, KimiCredentialConfigurationError } from './kimi-credentials.ts'
 
 const object = (value: unknown): value is Record<string, any> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
 const text = (value: unknown): value is string => typeof value === 'string' && !!value.trim()
-const literal = (value: unknown) =>
-  text(value) && !/^(?:!|\$|\{|<|your[_ -]|placeholder|changeme)/i.test(value) && !/[\x00-\x20]/.test(value)
 const unavailable = (): AccountIdentity => ({
   state: 'unavailable',
   verification: 'local',
@@ -176,21 +175,27 @@ export async function readKimiOwnToken(directory: string, slot: string, signal: 
 export async function readKimiAccount(
   raw: string,
   signal: AbortSignal,
-  options: { home?: string; now?: number } = {},
+  options: { home?: string; now?: number; env?: NodeJS.ProcessEnv } = {},
 ): Promise<AccountIdentity> {
   try {
     signal.throwIfAborted()
+    const env = options.env ?? process.env
+    assertKimiEnvironment(env)
     const config: unknown = JSON.parse(raw)
     if (!object(config) || !object(config.providers)) return unavailable()
-    const providers = Object.values(config.providers).filter(object)
-    const api = providers.some(
-      (provider) => !provider.oauth && (literal(provider.apiKey) || literal(provider.env?.KIMI_API_KEY)),
-    )
+    const resolutions = Object.values(config.providers).map(provider => resolveKimiCredential(provider, env))
+    const api = resolutions.some(value => value.kind === 'api')
     const configured: AccountIdentity = api
       ? { state: 'configured', verification: 'local', authMethod: 'api', summary: '已配置 Kimi API' }
-      : { state: 'unconfigured', verification: 'local', summary: '尚未登录 Kimi' }
+      : resolutions.some(value => value.kind === 'conflict') ? unavailable()
+      : resolutions.some(value => value.kind === 'unresolved' || value.kind === 'unsupported')
+        ? { state: 'configured', verification: 'local', authMethod: 'api', summary: 'Kimi API 引用已配置，但当前环境凭据未就绪或暂不支持' }
+        : Object.entries(config.providers).some(([name, value]) => name !== 'managed:kimi-code' && resolveKimiCredential(value, env).kind === 'oauth')
+          ? { state: 'unknown', verification: 'local', summary: 'Kimi 登录来源暂不支持，请在原生账号终端检查' }
+          : { state: 'unconfigured', verification: 'local', summary: '尚未登录 Kimi' }
     const provider = config.providers['managed:kimi-code']
     if (!object(provider) || provider.oauth === undefined) return configured
+    if (resolveKimiCredential(provider, env).kind !== 'oauth') return api ? configured : unavailable()
     if (provider.type !== 'kimi' || !object(provider.oauth) || provider.oauth.storage !== 'file')
       return { state: 'unknown', verification: 'local', summary: 'Kimi 登录配置暂不支持，请打开账号终端' }
     const slot = tokenSlot(provider.oauth.key)
@@ -226,8 +231,10 @@ export async function readKimiAccount(
       summary: '已登录 Kimi',
       ...(accountLabel ? { accountLabel } : {}),
     }
-  } catch {
+  } catch (error) {
     signal.throwIfAborted()
-    return unavailable()
+    return error instanceof KimiCredentialConfigurationError
+      ? { state: 'unavailable', verification: 'local', summary: error.message }
+      : unavailable()
   }
 }

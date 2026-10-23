@@ -25,6 +25,8 @@ export const CLI_IDS = [
   'opencode',
   'qoder',
   'qodercn',
+  'cursor',
+  'minimax',
 ] as const
 export type ActiveCliId = (typeof CLI_IDS)[number]
 /** Retired IDs remain readable in existing worker history, never selectable for execution. */
@@ -47,6 +49,8 @@ export const CLI_LABELS: Record<CliId, string> = {
   opencode: 'OpenCode',
   qoder: 'Qoder CLI',
   qodercn: 'Qoder CN CLI',
+  cursor: 'Cursor Agent',
+  minimax: 'MiniMax Code',
 }
 /** Short CLI stems used for automatic Worker names; protocol IDs remain unchanged. */
 export const CLI_SHORT_NAMES: Record<CliId, string> = {
@@ -64,6 +68,8 @@ export const CLI_SHORT_NAMES: Record<CliId, string> = {
   opencode: 'opencode',
   qoder: 'qoder',
   qodercn: 'qodercn',
+  cursor: 'cursor',
+  minimax: 'mmx',
 }
 export const cliOf = (preference: Preference): CliId => preference.cli ?? 'antigravity'
 export const effortLabel = (effort: string) =>
@@ -88,6 +94,8 @@ export interface Preference {
 export interface ModelChoice {
   id: string
   label: string
+  /** Exact opaque identities must not be route-stripped or case-folded for grouping. */
+  opaqueIdentity?: boolean
   /** Explicit native cost evidence only; missing/default zero prices are unknown. */
   cost?: 'free' | 'paid' | 'unknown'
   efforts?: Effort[]

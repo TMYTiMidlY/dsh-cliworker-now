@@ -122,6 +122,9 @@ export interface Config {
   opencodeExecutable?: string
   qoderExecutable?: string
   qodercnExecutable?: string
+  cursorExecutable?: string
+  minimaxExecutable?: string
+  minimaxHome?: string
   zcodeAuthDirectory?: string
   zcodeBuiltinConfig?: string
   /** @deprecated Accepted for old deployments only; never read or forwarded. */
@@ -229,6 +232,9 @@ export class CliWorkerService extends TypertRemoteService {
     opencodeExecutable: z.string(),
     qoderExecutable: z.string().min(1).default('qoder'),
     qodercnExecutable: z.string().min(1).default('qodercn'),
+    cursorExecutable: z.string(),
+    minimaxExecutable: z.string(),
+    minimaxHome: z.string(),
     zcodeAuthDirectory: z.string(),
     zcodeBuiltinConfig: z.string(),
     zaiCredentialRef: z.string(),
@@ -443,6 +449,12 @@ export class CliWorkerService extends TypertRemoteService {
             : parent.ctx.get('sandboxPolicy')!.resolve({ session: parent.session }).mode,
         )
         child.ctx.get('planMode')?.set(child, worker.mode === 'plan')
+        if (worker.transport === 'opencode-http-v2') {
+          worker.harnessConversation = { ...binding, capabilities: { ...binding.capabilities, model: false, steer: false },
+            reasons: { ...binding.reasons, tools: 'OpenCode v2 当前只开放全工具拒绝的纯文本会话', skills: 'OpenCode v2 当前不注入工具或技能', model: '此自有会话固定模型，修改请新建任务', steer: 'OpenCode v2 尚未开放实时引导' } }
+          this.runtime.storage.save(worker); this.runtime.changed()
+          return undefined
+        }
         const support = nativeHarnessToolCapability(cli)
         if (!support.transport) {
           worker.harnessConversation = {
@@ -776,7 +788,7 @@ export class CliWorkerService extends TypertRemoteService {
     }
   }
   /** Serialize only this conversation's selection; a cancelled waiter never owns the question. */
-  private async chooseDispatch(agent: Agent, callerSignal: AbortSignal, cli: CliId): Promise<DispatchSetup> {
+  private async chooseDispatch(agent: Agent, callerSignal: AbortSignal, cli: CliId, mode?: TaskMode): Promise<DispatchSetup> {
     const signal = AbortSignal.any([callerSignal, this.disposed.signal])
     signal.throwIfAborted()
     this.runtime.assertCliEnabled(cli)
@@ -805,6 +817,8 @@ export class CliWorkerService extends TypertRemoteService {
       const { catalog, binding } = await this.queryCatalog(cli, this.backend, this.options, project, signal)
       signal.throwIfAborted()
       this.runtime.assertCliEnabled(cli)
+      if (catalog.executionUnavailable) throw new Error(catalog.executionUnavailable)
+      if (catalog.allowedModes && (!mode || !catalog.allowedModes.includes(mode))) throw new Error('OpenCode v2 当前仅支持显式只读纯文本，请使用 read_only；编辑和工具尚未开放')
       this.settingsCatalogs.remember(project, { catalog, binding }, catalogRevision)
       const models = catalog.models
       const valid = (setup: DispatchSetup | undefined): setup is DispatchSetup => {
@@ -1244,6 +1258,7 @@ export class CliWorkerService extends TypertRemoteService {
                 exec.agent,
                 AbortSignal.any([exec.signal, this.disposed.signal]),
                 cli,
+                args.read_only ? 'plan' : 'accept-edits',
               )
               exec.signal.throwIfAborted()
               return this.launch(

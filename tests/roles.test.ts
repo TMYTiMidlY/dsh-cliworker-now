@@ -192,7 +192,7 @@ describe('named conversations and frozen roles', () => {
     expect(storage.history(initial.worker.id)[0]?.text).toBe('请检查第八章')
     storage.saveRolePreset({ ...preset, prompt: '后续修改' })
     storage.deleteRolePreset(preset.id)
-    await tick()
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
     expect(calls[0]!.spec.argv.some((arg) => arg.includes(fixtureRole.prompt))).toBe(true)
     expect(calls[0]!.spec.argv.some((arg) => arg.includes('请检查第八章'))).toBe(true)
     calls[0]!.finish('synthetic-original-conversation')
@@ -206,7 +206,7 @@ describe('named conversations and frozen roles', () => {
       'accept-edits',
       initial.worker.id,
     )
-    await tick()
+    await vi.waitFor(() => expect(calls).toHaveLength(2))
     expect(calls[1]!.spec.argv).toContain('任务：\n继续检查第九章')
     expect(calls[1]!.spec.argv.some((arg) => arg.includes(fixtureRole.prompt))).toBe(false)
     expect(followup.worker.role?.prompt).toBe(fixtureRole.prompt)

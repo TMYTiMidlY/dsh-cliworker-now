@@ -14,9 +14,9 @@ const jwt = (claims: unknown) =>
 function fixture() {
   const home = mkdtempSync(join(tmpdir(), 'cwn-identity-'))
   roots.push(home)
-  mkdirSync(join(home, '.gemini'))
+  mkdirSync(join(home, '.gemini', 'antigravity-cli'), { recursive: true })
   mkdirSync(join(home, '.codex'))
-  const agyPath = join(home, '.gemini', 'jetski-standalone-oauth-token')
+  const agyPath = join(home, '.gemini', 'antigravity-cli', 'antigravity-oauth-token')
   const codexPath = join(home, '.codex', 'auth.json')
   return {
     home,
@@ -46,6 +46,29 @@ describe('bounded account identity projection', () => {
     })
     expect(result?.summary).toBe('已登录 Antigravity')
     expect(JSON.stringify(result)).not.toMatch(/SECRET|eyJ|access_token|refresh_token/)
+  })
+
+  it('does not revive a stale jetski account when the current native login disappears', async () => {
+    const f = fixture()
+    const legacyPath = join(f.home, '.gemini', 'jetski-standalone-oauth-token')
+    writeFileSync(legacyPath, JSON.stringify(agy({ id_token: jwt({ email: 'legacy@example.com' }) })))
+    expect(await f.source('antigravity', f.signal)).toMatchObject({ state: 'unconfigured' })
+    writeFileSync(f.agyPath, JSON.stringify(agy()))
+    expect((await f.source('antigravity', f.signal))?.accountLabel).toBe('person@example.com')
+    writeFileSync(f.agyPath, '{malformed synthetic current login')
+    expect(await f.source('antigravity', f.signal)).toMatchObject({ state: 'unavailable' })
+    renameSync(f.agyPath, join(f.home, 'removed-native-login'))
+    expect(await f.source('antigravity', f.signal)).toMatchObject({ state: 'unconfigured' })
+  })
+
+  it('rejects a linked antigravity-cli parent rather than reading its account', async () => {
+    const f = fixture()
+    const own = join(f.home, '.gemini', 'antigravity-cli')
+    const redirected = join(f.home, 'redirected-native-directory')
+    writeFileSync(f.agyPath, JSON.stringify(agy()))
+    renameSync(own, redirected)
+    symlinkSync(redirected, own, 'junction')
+    expect(await f.source('antigravity', f.signal)).toMatchObject({ state: 'unavailable' })
   })
 
   it('reads fresh identity after account changes and clears a removed session', async () => {

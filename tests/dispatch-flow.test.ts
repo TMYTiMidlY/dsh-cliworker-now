@@ -131,6 +131,31 @@ function fixture() {
   }
 }
 
+it('refuses v2 diagnostic-only dispatch before caching or asking an empty model question', async () => {
+  const f = fixture()
+  f.service.queryCatalog.mockResolvedValue({ binding: 'synthetic-native-record-scope', catalog: { cli: 'opencode', models: [], notice: 'Synthetic metadata ready', executionUnavailable: 'Synthetic v2 execution still to implement', nativeModelCount: 4 } })
+  await expect(f.choose('parent', 'opencode')).rejects.toThrow('execution still to implement')
+  expect(f.ask).not.toHaveBeenCalled()
+  expect(f.service.querySelection).not.toHaveBeenCalled()
+  expect(f.service.pending.size).toBe(0)
+  expect(f.storage.conversationSetup('parent', f.project, 'opencode')).toBeUndefined()
+})
+it('v2 editable mode fails before the picker and before saving either project or conversation preferences', async () => {
+  const f = fixture()
+  f.service.queryCatalog.mockResolvedValue({ binding: 'synthetic-account-a', catalog: { cli: 'opencode', transport: 'opencode-http-v2', allowedModes: ['plan'], models: [{ id: 'fixture-a', label: 'Fixture A', efforts: ['low', 'high'] }], notice: 'Synthetic text only' } })
+  await expect(f.service.chooseDispatch(f.agent(), new AbortController().signal, 'opencode', 'accept-edits')).rejects.toThrow('只读纯文本')
+  expect(f.ask).not.toHaveBeenCalled(); expect(f.service.querySelection).not.toHaveBeenCalled()
+  expect(f.storage.conversationSetup('parent', f.project, 'opencode')).toBeUndefined()
+  expect(f.storage.dispatchSetup(f.project, 'opencode')).toBeUndefined()
+})
+it('explicit v2 plan reaches the same native model/effort/role picker instead of a silent selection', async () => {
+  const f = fixture()
+  f.service.queryCatalog.mockResolvedValue({ binding: 'synthetic-account-a', catalog: { cli: 'opencode', transport: 'opencode-http-v2', allowedModes: ['plan'], models: [{ id: 'fixture-a', label: 'Fixture A', efforts: ['low', 'high'] }], notice: 'Synthetic text only' } })
+  const chosen = f.service.chooseDispatch(f.agent(), new AbortController().signal, 'opencode', 'plan')
+  await f.complete()
+  expect((await chosen).preference).toEqual({ cli: 'opencode', model: 'fixture-a', effort: 'high' })
+  expect(f.ask).toHaveBeenCalledTimes(2)
+})
 it('first use asks model then only its actual efforts with role, with no detail or option descriptions', async () => {
   const f = fixture(),
     pending = f.choose()

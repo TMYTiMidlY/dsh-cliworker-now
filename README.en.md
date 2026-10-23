@@ -57,10 +57,19 @@ Captured from a real demo session in Harness Desktop (taken with v0.6.5; details
 | Antigravity | stream-json | OMP (Oh My Pi) | RPC |
 | Codex | app-server | Pi | RPC |
 | Claude Code | stream-json | Hermes Agent | Runs API |
-| Kimi Code | ACP | OpenCode | HTTP + SSE |
+| Kimi Code | ACP | OpenCode v1 / v2 | HTTP + SSE |
 | Official MiMo Code | HTTP + SSE | Qoder CLI | ACP |
 | ZCode | app-server | Qoder CN CLI | ACP |
-| Grok Build | ACP | | |
+| Grok Build | ACP | Cursor Agent (fork addition) | ACP |
+| MiniMax Code (fork addition) | ACP | | |
+
+OpenCode v2 now has an **explicit read-only, text-only** path (`read_only`) through an existing trusted Linux service, including owned-session continuation and evidence-based stop. All native tools are denied: file tools, edits, shell, MCP, attachments, forks and live steering remain unavailable. Each owned session keeps its exact model and native variant; choose a new task to change models. Missing service is unavailable, not logout. The plugin does not start the service, read/copy its credential database or fall back to v1. Unknown admission or unconfirmed remote cleanup stays durably quarantined; bridge exit or a temporarily idle service is not a stop receipt. Account management is user-operated. Current acceptance covers actual Host/bridge and official DSH child integration with a **synthetic v2 service**, not a real OpenCode service/model, GUI or another platform. V1 support is retained.
+
+Kimi 2.2 API status, model scopes and bindings share native credential resolution: inline keys, provider-type-specific private `env`, and explicitly declared `apiKeyEnv` references. Only the required explicit references cross the private child-environment boundary; missing references or conflicts never select a different key. API configuration is not OAuth login. Global `KIMI_MODEL_*` overlays and additional model protocols remain unsupported; real requests and the earlier GUI report still need separate acceptance.
+
+Cursor Agent uses `cursor-agent acp`, preserves opaque parameterized model IDs, and offers only the default effort. Native account and model metadata reads have been checked and synthetic protocol regressions pass; real generation, sidebar and Windows acceptance remain pending. Account status comes from native `status --format json`, never DSH or another CLI's credentials.
+
+MiniMax Code is independent of MiMo; aliases are `mmx`, `mcode`, `minimax`, and `minimax code`, with stable entry `~/.minimax-code/bin/mcode`. Initial support is restricted to standard prod native token_plan OAuth. The data root is explicitly selected by `minimaxHome`, current `MINIMAX_DATA_DIR` / `MAVIS_DATA_DIR`, or `~/.minimax`; other account directories are never auto-selected. Authenticated ACP receipts determine opaque models and per-model efforts, and Ask permission must be confirmed before prompting. Plan, attachments, tool injection, forks and steer remain disabled. The current default route is rejected by the native login gate; synthetic tests do not prove real model, sidebar or Windows acceptance.
 
 - **Platforms**: macOS / Windows. Install the native build of each CLI you use and complete that CLI's own login or API setup.
 - **Host**: DeepSeek Harness (bundled resources currently target 0.2.1-rc.2); Node.js ≥ 22.19.0.

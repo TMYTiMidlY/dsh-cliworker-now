@@ -61,7 +61,7 @@ function fixture(projections: object[] = [account(), account()], onModels?: () =
 it.each(['win32', 'darwin'] as const)('AGY background current model discovery scopes updater suppression on %s', async system => {
   Object.defineProperty(process, 'platform', { ...platform, value: system })
   vi.stubEnv('AGY_CLI_DISABLE_AUTO_UPDATE', 'false')
-  writeFileSync(join(state.home, '.gemini/jetski-standalone-oauth-token'), JSON.stringify({
+  writeFileSync(join(state.home, '.gemini/antigravity-cli/antigravity-oauth-token'), JSON.stringify({
     auth_method: 'consumer', token: { access_token: 'synthetic-access', refresh_token: 'synthetic-refresh' },
   }))
   const f = fixture()
@@ -225,7 +225,7 @@ it('preserves the Mac native file route and never invokes the Windows credential
     JSON.stringify({ sub: 'synthetic-own-subject', iss: 'https://accounts.google.com' }),
   ).toString('base64url')
   writeFileSync(
-    join(state.home, '.gemini/jetski-standalone-oauth-token'),
+    join(state.home, '.gemini/antigravity-cli/antigravity-oauth-token'),
     JSON.stringify({
       auth_method: 'consumer',
       token: { refresh_token: 'synthetic-refresh', access_token: 'synthetic-access' },

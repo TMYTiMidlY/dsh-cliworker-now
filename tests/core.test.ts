@@ -206,7 +206,7 @@ describe('scheduler, cancellation and session continuity', () => {
     const task = runtime.submit('p', project, 'a', 'a', pref, 'accept-edits')
     expect(() => runtime.assertAccountIdle('antigravity')).toThrow('还有运行或排队')
     expect(() => runtime.assertAccountIdle('codex')).not.toThrow()
-    await tick()
+    await vi.waitFor(() => expect(backend.calls).toHaveLength(1))
     backend.calls[0].stdout.write(result())
     backend.calls[0].end()
     await task.done

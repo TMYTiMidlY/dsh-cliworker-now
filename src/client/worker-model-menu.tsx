@@ -92,7 +92,8 @@ export function WorkerModelMenu({
   )
   const visible = visibleModelChoices(catalog?.models ?? [], selection.model)
   const name = visible.find((model) => model.id === chosen?.id)?.label ?? displayModelName(selection)
-  const locked = disabled || saving || active(worker.status)
+  const fixedModel = worker.transport === 'opencode-http-v2'
+  const locked = disabled || saving || active(worker.status) || fixedModel
   const choicesLocked = locked || loading || !catalog || !!error
   const close = () => {
     if (!saving) {
@@ -184,6 +185,7 @@ export function WorkerModelMenu({
           onClick={() => (open ? close() : setOpen(true))}
           title={
             disabledReason ||
+            (fixedModel ? 'OpenCode v2 此自有纯文本会话固定模型与强度，修改请新建任务' : undefined) ||
             (active(worker.status)
               ? '本轮结束后可以修改模型与强度'
               : `${name} · ${effortLabel(selection.effort)}`)

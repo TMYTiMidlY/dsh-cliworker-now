@@ -16,6 +16,8 @@ export const CLI_ALIASES: Record<ActiveCliId, readonly string[]> = {
   pi: ['pi', 'pi coding agent'],
   hermes: ['hermes', 'hermes agent', 'harmes'],
   opencode: ['opencode', 'open code'],
+  cursor: ['cursor', 'cursor-agent', 'cursor agent', 'cursor CLI'],
+  minimax: ['minimax', 'minimax code', 'mmx', 'mcode'],
   qoder: [
     'qoder',
     'qodercli',

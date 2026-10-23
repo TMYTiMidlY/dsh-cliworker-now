@@ -154,7 +154,7 @@ it('forwards only the run-private Harness connection through the extended native
     parentSessionId: 'simulated-parent', harnessSessionId: 'simulated-child', workerId: 'simulated-worker', runId: 'simulated-run', cli: 'opencode',
   }, executionReady: true }
   const launch = await extendedLaunch('opencode', 'opencode', directory, { cli: 'opencode', model: 'fixture/model', effort: 'default' },
-    'plan', 'synthetic', directory, { ...DEFAULT_CONFIG, harnessTools: connection }, undefined, undefined, undefined, true)
+    'plan', 'synthetic', directory, { ...DEFAULT_CONFIG, harnessTools: connection }, undefined, async () => '1.18.21', undefined, true)
   try {
     expect(launch.env?.[HARNESS_CONNECTION_ENV]).toBe(JSON.stringify(connection))
     expect(JSON.parse(launch.env!.OPENCODE_CONFIG_CONTENT!).mcp.dsh_worker_tools).toMatchObject({ type: 'local', enabled: true })

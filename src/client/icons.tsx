@@ -78,6 +78,8 @@ export function BrandIcon({
                 hermes: 'H',
                 harness: 'H',
                 opencode: 'OC',
+                cursor: 'C',
+                minimax: 'MM',
               } as Record<string, string>
             )[cli]
           }

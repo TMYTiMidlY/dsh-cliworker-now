@@ -13,7 +13,7 @@ beforeEach(async () => {
   await mkdir(join(home, '.gemini/antigravity-cli'), { recursive: true })
 })
 afterEach(async () => { await rm(home, { recursive: true, force: true }) })
-const login = () => writeFile(join(home, '.gemini/jetski-standalone-oauth-token'), JSON.stringify({
+const login = () => writeFile(join(home, '.gemini/antigravity-cli/antigravity-oauth-token'), JSON.stringify({
   auth_method: 'consumer', token: { access_token: 'synthetic-access', refresh_token: 'synthetic-refresh' },
 }))
 
@@ -42,7 +42,7 @@ it('does not discover public models when only another CLI has credentials or aft
   expect(capture).not.toHaveBeenCalled()
   await login()
   await discoverAgyAccountModels(capture, signal(), home)
-  await rm(join(home, '.gemini/jetski-standalone-oauth-token'))
+  await rm(join(home, '.gemini/antigravity-cli/antigravity-oauth-token'))
   await expect(discoverAgyAccountModels(capture, signal(), home)).rejects.toThrow('请先登录')
   expect(capture).toHaveBeenCalledOnce()
 })
