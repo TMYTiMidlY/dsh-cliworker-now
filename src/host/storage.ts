@@ -64,6 +64,7 @@ const preferenceSchema = z.object({
   cli: z.enum(CLI_IDS).optional(),
   model: z.string().min(1),
   effort: z.enum(EFFORTS),
+  agyAccount: z.enum(['default', 'lxy']).optional(),
 })
 /** Complete dispatch choices stay Host-private; public preferences omit role and binding. */
 export interface DispatchSetup {
@@ -159,6 +160,8 @@ const workerSchema = z.object({
   lastResult: z.string().optional(),
 })
 const eventSchema = z.object({
+  runConfiguration: z.object({ preference: storedPreferenceSchema, mode: z.enum(['plan', 'accept-edits']) }).optional(),
+  runOutcome: z.object({ status: z.enum(['queued', 'running', 'stopping', 'completed', 'failed', 'interrupted', 'uncertain']), error: z.string().optional(), cleanup: z.enum(['confirmed', 'unconfirmed', 'unknown']) }).optional(),
   requestState: z.object({
     nativeRunId: z.string().regex(/^[\w-]{1,256}$/),
     sequence: z.number().int().safe().positive(),

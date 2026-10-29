@@ -389,17 +389,18 @@ it('keeps Worker preparation and old queues out of native session state and inpu
   expect(stop).not.toHaveBeenCalled()
 })
 it.each([false, true])(
-  'shows one neutral settings prompt while configuring (selected=%s)',
+  'shows parameter validation without suggesting user question cards (selected=%s)',
   async (selected) => {
     const t = await setup(selected)
     await act(async () => {
       t.streams.at(-1)!.push({ ...t.snapshot(selected ? 'a' : undefined), configuring: true })
     })
-    expect(t.text()).toContain('等待确认设定。请在主对话的问题卡片中选择。')
+    expect(t.text()).toContain('正在校验派遣参数与原生账号，请稍候。')
+    expect(t.text()).not.toContain('问题卡片')
     expect(t.text()).not.toContain('等待选择模型、思考强度与智能体预设')
     expect(t.followup).not.toHaveBeenCalled()
     await t.push(selected ? 'a' : undefined, 2)
-    expect(t.text()).not.toContain('等待确认设定')
+    expect(t.text()).not.toContain('正在校验派遣参数')
   },
 )
 

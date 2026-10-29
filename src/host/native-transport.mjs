@@ -227,13 +227,19 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
           error ??= issue
         }
       }
+      // Health/cleanup failures still win. For AGY only, retain the already
+      // classified CLI-summary error alongside that failure instead of erasing
+      // its provenance with a generic natural-exit message. Other CLI and the
+      // deliberately redacted OpenCode-v2 failure contracts are unchanged.
+      const priorAgyError = config.cli === 'antigravity' && result?.status !== 'SUCCESS' && typeof result?.error === 'string'
+        ? result.error.slice(0, 4096) : undefined
       if (error)
         result = {
           type: 'result',
           status: 'ERROR',
           response,
           resultScope: 'run',
-          error: config.transport === 'opencode-http-v2' ? (signal?.aborted ? '任务已停止' : 'OpenCode v2 原生任务未完成，请核对自有会话状态') : String(error.message ?? error).slice(0, 4096),
+          error: config.transport === 'opencode-http-v2' ? (signal?.aborted ? '任务已停止' : 'OpenCode v2 原生任务未完成，请核对自有会话状态') : `${String(error.message ?? error).slice(0, 4096)}${priorAgyError && !String(error.message ?? error).includes(priorAgyError) ? `；CLI 先前结果：${priorAgyError}` : ''}`.slice(0, 8192),
         }
       if (!result) result = { type: 'result', status: 'ERROR', response, resultScope: 'run', error: '原生协议结束但没有轮次终态' }
       if (!sessionId && !config.forkOperation && result.status !== 'ERROR') throw failure('Native result has no session')

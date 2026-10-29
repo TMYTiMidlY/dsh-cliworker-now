@@ -6,7 +6,7 @@
 
 ## What Changes
 
-- 识别原生版本，默认 PATH 缺失时识别官方 ~/.opencode/bin/opencode，不覆盖手动路径。
+- 识别原生版本，默认 PATH 缺失时识别官方 ~/.opencode/bin/opencode，不覆盖手动路径。父会话续接补齐固定2.0.31安装版官方formatter的完整 `opencode v<semver>` 行；保留未知major/噪声拒绝，提供不泄漏原始载荷的版本形状诊断。
 - Linux v2 只读取默认原生服务的私有 registry，校验原生进程、版本、回环地址及读取一致性，再使用固定 GET 元数据接口。缺服务不读数据库或 v1 auth.json，也不报告未登录。
 - 从当前 integration 的首个 credential connection 与 provider/model 精确关联，保留模型和数组 variants 的原生标识；原生仅报告 needs_auth、环境或未知来源时保持真实限制。候选只作诊断，不开放为可执行选项。
 - v2 状态、目录、账号终端、派遣和旧会话续聊均显式版本分流，任何 v2 任务在 v1 快照、临时数据库或工具注入前拒绝；v1 路径保留。

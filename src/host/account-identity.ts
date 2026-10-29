@@ -118,7 +118,7 @@ export function localAccountIdentity(
         state: 'authenticated',
         authMethod: 'oauth',
         verification: 'local',
-        accountLabel: accountEmail(idTokenClaims(value.id_token)?.email),
+        accountLabel: accountEmail(idTokenClaims(value.id_token)?.email) ?? accountEmail(value.id_token_email),
         summary: '已登录 Antigravity',
       }
     } catch (error) {

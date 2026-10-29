@@ -38,7 +38,7 @@ function fixture(run = false) {
   // Hold actual runtime admission in its queue, so stop and recovery exercise real lifecycle code.
   const open = () => {
     const storage = new WorkerStorage(directory)
-    const runtime = new WorkerRuntime(storage, backend, { ...DEFAULT_CONFIG, maxConcurrent: run ? 1 : 0 })
+    const runtime = new WorkerRuntime(storage, backend, { ...DEFAULT_CONFIG, maxConcurrent: 1 })
     cleanup.push(() => runtime.close())
     return { storage, runtime }
   }

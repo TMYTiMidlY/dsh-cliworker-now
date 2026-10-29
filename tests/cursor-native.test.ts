@@ -233,6 +233,7 @@ async function runtimeFixture(scenario = 'success', continuation = false, mode =
       if (method === 'session/prompt') {
         if (scenario === 'bad-envelope') await receive({ method: 'session/update' })
         if (scenario === 'permission') await receive({ jsonrpc: '2.0', method: 'session/request_permission', id: 'permission', params: { sessionId: data.sessionId, options: [{ kind: 'allow_once', optionId: 'allow' }, { kind: 'reject_once', optionId: 'reject' }] } })
+        if (scenario === 'unknown-request') await receive({ jsonrpc: '2.0', method: 'fs/read_text_file', id: 'unknown', params: { sessionId: data.sessionId } })
         if (scenario === 'changed-mode') await receive({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: data.sessionId, update: { sessionUpdate: 'config_option_update', configOptions: [{ id: 'mode', currentValue: 'agent' }] } } })
         if (scenario !== 'empty') await receive({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: data.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'HELLO' } } } })
         if (scenario === 'cancel') controller.abort()
@@ -273,6 +274,11 @@ describe('Cursor dedicated ACP runner (synthetic peer; not native acceptance)', 
   it('denies permission rather than sending --force or using the MCP approval path', async () => {
     const f = await runtimeFixture('permission')
     expect(f.sends.find(s => s.id === 'permission').result.outcome).toEqual({ outcome: 'selected', optionId: 'reject' })
+    expect(f.terminal[0]).toBe('ERROR'); expect(f.closed).toBe(true)
+  })
+  it('fails unknown native client requests instead of continuing to end_turn success', async () => {
+    const f = await runtimeFixture('unknown-request')
+    expect(f.sends.find(s => s.id === 'unknown').error).toMatchObject({ code: -32601 })
     expect(f.terminal[0]).toBe('ERROR'); expect(f.closed).toBe(true)
   })
   it.each(['cancel', 'changed-mode'])('sends native cancel for %s and closes owned peer', async scenario => {

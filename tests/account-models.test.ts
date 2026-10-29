@@ -179,6 +179,40 @@ describe('read-only account-supported metadata (all credentials and responses si
       expect(JSON.stringify(scope)).not.toContain(key)
     },
   )
+  it.each([
+    ['429', 'unknown', undefined], ['500', 'unknown', undefined],
+    ['malformed', 'unknown', undefined], ['transport', 'unknown', undefined],
+    ['quota', 'denied', 'quota'], ['401', 'denied', 'authentication'], ['403', 'denied', 'authentication'],
+  ] as const)('does not reuse a valid first Codex scope when the same source next returns %s', async (scenario, state, denialReason) => {
+    const source = { ...oauth(), codexClientVersion: '0.162.1' }, calls: string[] = []
+    let usageChecks = 0
+    const fetcher = vi.fn(async (url: unknown, init: any) => {
+      expect(init.method).toBe('GET'); calls.push(String(url))
+      if (!String(url).includes('/wham/usage')) return reply({ models: [{ slug: 'synthetic-current-model', supported_in_api: true }] })
+      if (++usageChecks === 1) return reply({ rate_limit: { allowed: true, limit_reached: false } })
+      if (scenario === 'transport') throw new Error(key)
+      if (scenario === 'malformed') return new Response('{SYNTHETIC_INVALID_JSON', { status: 200 })
+      if (scenario === 'quota') return reply({ rate_limit: { allowed: false, limit_reached: true } })
+      return reply({ rate_limit: { allowed: false, limit_reached: true }, message: key }, Number(scenario))
+    })
+    expect(await probeAccountModels(source, { fetch: fetcher as typeof fetch })).toMatchObject({ state: 'supported', models: [{ id: 'synthetic-current-model' }] })
+    const current = await probeAccountModels(source, { fetch: fetcher as typeof fetch })
+    expect(current).toMatchObject({ state, models: [] }); expect(current.denialReason).toBe(denialReason)
+    expect(calls).toHaveLength(4); expect(usageChecks).toBe(2)
+    expect(JSON.stringify(current)).not.toMatch(/SYNTHETIC_PRIVATE|metadata\.test|chatgpt\.com/)
+  })
+  it('a second Codex scope deadline remains unknown and does not retry or restore first-query models', async () => {
+    let usageChecks = 0
+    const fetcher = vi.fn(async (url: unknown, init: any) => {
+      if (!String(url).includes('/wham/usage')) return reply({ models: [{ slug: 'synthetic-current-model', supported_in_api: true }] })
+      if (++usageChecks === 1) return reply({ rate_limit: { allowed: true, limit_reached: false } })
+      return new Promise<Response>((_, reject) => init.signal.addEventListener('abort', () => reject(new Error(key)), { once: true }))
+    })
+    const source = { ...oauth(), codexClientVersion: '0.162.1' }
+    expect((await probeAccountModels(source, { fetch: fetcher as typeof fetch })).state).toBe('supported')
+    expect(await probeAccountModels(source, { fetch: fetcher as typeof fetch, timeoutMs: 50 })).toEqual({ state: 'unknown', source: 'unknown', models: [] })
+    expect(fetcher).toHaveBeenCalledTimes(4); expect(usageChecks).toBe(2)
+  })
   it('does not refresh expired OAuth or run command credential resolvers', async () => {
     const fetcher = vi.fn()
     expect(

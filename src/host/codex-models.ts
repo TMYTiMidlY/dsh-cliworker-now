@@ -4,6 +4,31 @@ import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig
 import { probeAccountModels } from './account-models.mjs'
 import { readCodexOwnAccountSource } from './cli-account-binding.ts'
 
+export type CodexCatalogReason = 'source-unconfirmed' | 'source-changed' | 'scope-unknown' | 'scope-denied-unclassified' | 'catalog-empty' | 'capability-intersection-empty' | 'quota' | 'authentication'
+const catalogFailures = new WeakSet<object>()
+const catalogMessages: Record<CodexCatalogReason, string> = {
+  'source-unconfirmed': '本次原生来源证据不足；不能确认目录，不等于已登出或无额度',
+  'source-changed': '账号来源在本次查询期间变更，请重新选择；未发布目录',
+  'scope-unknown': '本次目录可用性检查未能确认；不等于无额度或已登出，请勿借用旧显示目录授权',
+  'scope-denied-unclassified': '本次目录可用性检查被拒绝但原因未确认；不能断言无额度或已登出',
+  'catalog-empty': '本次已确认来源返回空模型目录；不是余额查询',
+  'capability-intersection-empty': '本次目录与可核验原生能力没有交集；未发布未经确认的模型或强度',
+  quota: 'Codex 当前账号额度已用尽，请等待额度恢复后刷新',
+  authentication: 'Codex 当前账号认证不可用或访问被拒绝，请检查登录后刷新',
+}
+/** Fixed source/stage reasons only. Never retains endpoints, credentials or HTTP/native causes. */
+export class CodexCatalogError extends Error {
+  readonly code: string
+  constructor(readonly reason: CodexCatalogReason) {
+    if (typeof reason !== 'string' || !Object.hasOwn(catalogMessages, reason)) throw new Error('Invalid Codex catalog reason')
+    const message = catalogMessages[reason]
+    const code = reason === 'source-changed' ? 'CODEX_SOURCE_CHANGED' : reason === 'quota' || reason === 'authentication' ? 'CODEX_CATALOG_DENIED' : 'CODEX_CATALOG_UNCONFIRMED'
+    super(`${code}:${reason}：${message}`)
+    this.name = 'CodexCatalogError'; this.code = code; catalogFailures.add(this)
+  }
+}
+export const isCodexCatalogError = (value: unknown): value is CodexCatalogError => value !== null && typeof value === 'object' && catalogFailures.has(value)
+
 const record = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
 const validId = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(v)
 export function parseCodexNativeModels(values: unknown[]): ModelChoice[] {
@@ -159,7 +184,7 @@ export async function discoverCodexModels(
 ): Promise<ModelChoice[]> {
   // Resolve the native source before opening the server, then reread after its normal OAuth refresh.
   const before = await readCodexOwnAccountSource(cwd, signal)
-  if (!before.nativeRouteConfirmed) return []
+  if (!before.nativeRouteConfirmed || !before.sourceIdentity) throw new CodexCatalogError('source-unconfirmed')
   let codexClientVersion: string | undefined
   const native = await readCodexNativeModels(backend, config, executable, cwd, signal, {
     onServerVersion: (version) => {
@@ -168,7 +193,8 @@ export async function discoverCodexModels(
   })
   signal.throwIfAborted()
   const source = await readCodexOwnAccountSource(cwd, signal)
-  if (!source.nativeRouteConfirmed) return []
+  if (!source.nativeRouteConfirmed || !source.sourceIdentity) throw new CodexCatalogError('source-unconfirmed')
+  if (before.sourceIdentity !== source.sourceIdentity) throw new CodexCatalogError('source-changed')
   if (source.provider === 'openai-codex' && !codexClientVersion)
     throw new Error('Codex 版本无法确认，请升级 CLI 后刷新')
   const scope = await probeAccountModels(
@@ -182,13 +208,14 @@ export async function discoverCodexModels(
   )
   signal.throwIfAborted()
   if (scope.state === 'denied' && scope.denialReason === 'quota')
-    throw new Error('Codex 当前账号额度已用尽，请等待额度恢复后刷新')
+    throw new CodexCatalogError('quota')
   if (scope.state === 'denied' && scope.denialReason === 'authentication')
-    throw new Error('Codex 当前账号认证不可用或访问被拒绝，请检查登录后刷新')
-  if (scope.state !== 'supported') return []
+    throw new CodexCatalogError('authentication')
+  if (scope.state !== 'supported') throw new CodexCatalogError(scope.state === 'unknown' ? 'scope-unknown' : 'scope-denied-unclassified')
+  if (!scope.models.length) throw new CodexCatalogError('catalog-empty')
   // Current account metadata can lead the app-server's bundled/cache catalog.
   // Add a remote ID only with reasoning capabilities from that same response.
-  return scope.models.flatMap((allowed) => {
+  const models = scope.models.flatMap((allowed) => {
     if (!validId(allowed.id)) return []
     const current = native.find((model) => model.id === allowed.id)
     const remoteEfforts = EFFORTS.filter((effort) => allowed.reasoningEfforts?.includes(effort))
@@ -201,4 +228,6 @@ export async function discoverCodexModels(
       }]
     return current ? [current] : []
   })
+  if (!models.length) throw new CodexCatalogError('capability-intersection-empty')
+  return models
 }

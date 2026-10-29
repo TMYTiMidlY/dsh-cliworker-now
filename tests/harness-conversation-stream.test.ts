@@ -11,6 +11,7 @@ import { pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { runNativeClaude } from '../src/host/native-claude.mjs'
+import { runNativeCursor } from '../src/host/native-cursor.mjs'
 import { HarnessConversationStream } from '../src/host/harness-conversation-stream.ts'
 import type {
   HarnessConversationDependencies,
@@ -34,7 +35,7 @@ async function fixture(
     maxParallelToolCalls?: number
     inputSettlement?: Promise<void>
     sourceEvents?: Array<Omit<WorkerEvent, 'seq' | 'runId' | 'time'>>
-    cli?: 'hermes' | 'opencode' | 'claude' | 'codex'
+    cli?: 'hermes' | 'opencode' | 'claude' | 'codex' | 'cursor' | 'antigravity'
     transport?: string
   } = {},
 ) {
@@ -225,6 +226,76 @@ async function fixture(
     },
   }
 }
+
+it.each(['conflict', 'negative', 'zero', 'diff-conflict', 'diff-equal', 'malformed-response', 'local-deny-empty', 'local-deny-zero', 'local-deny-output-conflict', 'local-deny-reuse', 'read-missing', 'read-empty', 'read-image-like', 'read-text-empty'] as const)('Cursor synthetic %s terminal cannot settle the real passive tool consumer before full run', async scenario => {
+  const isDiff = scenario.startsWith('diff-'), isRead = scenario.startsWith('read-'), localDenied = scenario.startsWith('local-deny-'), identityReuse = scenario === 'local-deny-reuse', conflict = scenario === 'conflict' || scenario === 'diff-conflict' || identityReuse || isRead && scenario !== 'read-text-empty'
+  const publishedTools: any[] = []
+  const f = await fixture({ cli: 'cursor', transport: 'cursor-acp-v1', sourceEvents: [{ kind: 'user', text: 'synthetic input' }] })
+  await f.begin()
+  const gate = Promise.withResolvers<void>(), reached = Promise.withResolvers<void>()
+  const sid = 'synthetic-cursor-session'
+  let receive: (frame: any) => Promise<void>
+  let result: any[] = []
+  const data = { sessionId: sid, configOptions: [
+    { id: 'model', type: 'select', currentValue: 'synthetic-model', options: [{ value: 'synthetic-model', name: 'Synthetic' }] },
+    { id: 'mode', type: 'select', currentValue: 'agent', options: ['agent', 'plan', 'ask'].map(value => ({ value, name: value })) },
+  ] }
+  const send = async (update: any) => receive({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: sid, update } })
+  const peer = { send: async () => {}, end: () => {}, close: async () => {}, request: async (method: string, _params: any, requestOptions: any) => {
+    if (method === 'initialize') return { protocolVersion: 1, agentCapabilities: {} }
+    if (method === 'session/new') return data
+    if (method === 'session/prompt') {
+      await send({ sessionUpdate: 'tool_call', toolCallId: 'cursor-call', title: 'synthetic_cli_tool', kind: isDiff ? 'edit' : isRead ? 'read' : 'execute', status: 'pending', rawInput: isDiff || isRead ? { path: '/synthetic' } : { command: 'synthetic' } })
+      if (isRead) {
+        await send({ sessionUpdate: 'tool_call_update', toolCallId: 'cursor-call', status: 'completed', ...(scenario === 'read-text-empty' ? { rawOutput: { content: '' } } : scenario === 'read-empty' ? { content: [] } : scenario === 'read-image-like' ? { content: [{ type: 'content', content: { type: 'image', mimeType: 'image/png', data: 'SYNTHETIC_IMAGE' } }] } : {}) })
+      } else if (localDenied) {
+        await receive({ jsonrpc: '2.0', id: 'synthetic-denial', method: 'session/request_permission', params: { sessionId: sid, toolCall: { toolCallId: 'cursor-call', title: 'PRIVATE_PERMISSION' }, options: [{ kind: 'reject_once', optionId: 'reject' }] } })
+        await send({ sessionUpdate: 'tool_call_update', toolCallId: 'cursor-call', status: 'completed', ...(scenario === 'local-deny-zero' ? { rawOutput: { exitCode: 0, stdout: 'PRIVATE_RAW', stderr: '' } } : { content: scenario === 'local-deny-output-conflict' ? [{ type: 'content', content: { type: 'text', text: 'ONE' } }] : [] }) })
+      } else await send({ sessionUpdate: 'tool_call_update', toolCallId: 'cursor-call', status: 'completed', ...(isDiff ? { content: [{ type: 'diff', path: '/synthetic', oldText: null, newText: 'ONE' }] } : { rawOutput: { exitCode: scenario === 'zero' || scenario === 'malformed-response' ? 0 : 1, stdout: '', stderr: scenario === 'malformed-response' ? '' : 'PRIVATE_RAW' } }) })
+      await send({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'still receiving' } })
+      reached.resolve(); await gate.promise
+      if (identityReuse) {
+        await send({ sessionUpdate: 'tool_call', toolCallId: 'cursor-call', kind: 'execute', status: 'pending', rawInput: { command: 'different identity' } })
+        await send({ sessionUpdate: 'tool_call_update', toolCallId: 'cursor-call', status: 'completed', content: [] })
+      }
+      if (scenario === 'local-deny-output-conflict') await send({ sessionUpdate: 'tool_call_update', toolCallId: 'cursor-call', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'TWO' } }] })
+      if (scenario === 'conflict') await send({ sessionUpdate: 'tool_call_update', toolCallId: 'cursor-call', status: 'completed', rawOutput: { exitCode: 0, stdout: 'ordinary output', stderr: '' } })
+      if (isDiff) await send({ sessionUpdate: 'tool_call_update', toolCallId: 'cursor-call', content: [{ newText: conflict ? 'TWO' : 'ONE', oldText: null, path: '/synthetic', type: 'diff' }] })
+      if (scenario === 'malformed-response') {
+        await receive({ jsonrpc: '2.0', id: requestOptions.id, method: false, result: { stopReason: 'end_turn' } })
+        await send({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'LATE' } })
+      }
+      return { stopReason: 'end_turn' }
+    }
+    throw new Error('Unexpected synthetic method')
+  } }
+  const pending = runNativeCursor({ cli: 'cursor', argv: ['/synthetic/cursor', 'acp'], mode: 'accept-edits', preference: { model: 'synthetic-model', effort: 'default' }, prompt: 'synthetic' }, {
+    signal: new AbortController().signal, native: () => {}, session: () => {},
+    event: (e: any) => { if (e.kind === 'tool') publishedTools.push(e); f.publish(e) }, result: (...args: any[]) => { result = args },
+    openStdio: async (_argv: any, options: any) => { receive = options.onMessage; return peer },
+  })
+  await reached.promise
+  await vi.waitFor(() => expect(f.agent.session.log.filter(e => e.type === 'tool/call')).toHaveLength(1))
+  expect(f.agent.session.log.filter(e => e.type === 'tool/result')).toHaveLength(0)
+  gate.resolve(); await pending
+  await f.finish(result[0] === 'SUCCESS' ? 'completed' : result[0] === 'UNCERTAIN' ? 'uncertain' : 'failed', result[2])
+  expect(result[0]).toBe(localDenied ? 'ERROR' : conflict ? 'UNCERTAIN' : scenario === 'negative' || scenario === 'malformed-response' ? 'ERROR' : 'SUCCESS')
+  if (scenario === 'malformed-response') expect(result[1]).toBe('still receiving')
+  if (localDenied) {
+    expect(result[2]).toBe('CLI 请求的额外权限已拒绝')
+    expect(publishedTools.at(-1).state).toBe(identityReuse ? 'UNKNOWN' : 'FAILED')
+    expect(publishedTools.slice(0, -1).every(e => !['COMPLETED', 'FAILED'].includes(e.state))).toBe(true)
+  }
+  const toolResults = f.agent.session.log.filter(e => e.type === 'tool/result')
+  expect(toolResults).toHaveLength(1)
+  expect(toolResults[0]?.data.message.isError).toBe(conflict || scenario === 'negative' || localDenied)
+  if (conflict) expect(toolResults[0]?.data).toMatchObject({ error: { code: 'TOOL_OUTCOME_UNKNOWN' } })
+  if (scenario !== 'zero') expect(JSON.stringify(toolResults)).not.toContain('PRIVATE_RAW')
+  expect(f.realTool).not.toHaveBeenCalled()
+  expect(f.deps.stop).not.toHaveBeenCalled()
+  const cold = Session.create(f.agent.id, JSON.parse(JSON.stringify(f.agent.session.log)), f.agent.session.header)
+  expect(cold.deriveMessages().filter(m => m.role === 'tool')).toHaveLength(1)
+})
 
 it('settles one proven response with public reasoning/text once and supplies native turn/session usage', async () => {
   const usage = {
@@ -582,6 +653,21 @@ it('records a normal Worker Stop as native cancellation only after the cleanup o
   expect(f.agentErrors).not.toHaveBeenCalled()
   expect(f.deps.stop).not.toHaveBeenCalled()
   expect(f.listeners.size).toBe(0)
+})
+
+it.each(['antigravity', 'cursor'] as const)('%s uncertainty keeps its observed body but uses a distinct conservative native error code', async cli => {
+  const f = await fixture({ cli })
+  await f.begin()
+  await f.finish('uncertain', 'SYNTHETIC_ORIGINAL_SUMMARY')
+  const ending = f.agent.session.log.filter(event => event.type === 'turn/end').at(-1)?.data
+  expect(ending).toMatchObject({ reason: { kind: 'error', error: { code: 'CLI_RESULT_UNCERTAIN' } } })
+  const message = (ending as any)?.reason.error.message
+  expect(message).toContain('结果待核实'); expect(message).toContain('Failed'); expect(message).toContain('兼容')
+  expect(message).toContain('不要自动重试'); expect(message).toContain('SYNTHETIC_ORIGINAL_SUMMARY')
+  expect(f.agent.session.deriveMessages().filter(m => m.role === 'assistant').flatMap(m => m.content.filter(b => b.type === 'text').map(b => b.text))).toEqual(['observed CLI prefix'])
+  expect(f.cancel).not.toHaveBeenCalled(); expect(f.deps.stop).not.toHaveBeenCalled(); expect(f.realTool).not.toHaveBeenCalled()
+  expect(f.listeners.size).toBe(0)
+  expect(Session.create(f.agent.id, JSON.parse(JSON.stringify(f.agent.session.log)), f.agent.session.header).log.filter(e => e.type === 'turn/end').at(-1)?.data).toMatchObject({ reason: { kind: 'error', error: { code: 'CLI_RESULT_UNCERTAIN' } } })
 })
 
 it('keeps a genuine CLI failure as an error with its original detail', async () => {
@@ -986,8 +1072,9 @@ it.each(['complete', 'interrupted'])('projects %s interleaved Claude Task stream
   const log = JSON.stringify(f.agent.session.log)
   expect(log).toContain('模拟主回复')
   expect(log).toContain('模拟子进度')
-  expect(log).not.toContain('9999')
   const messages = f.agent.session.log.filter((event) => event.type === 'assistant/message')
+  // Inspect usage only: a random SDK message UUID can legitimately contain 9999.
+  expect(JSON.stringify(messages.map(event => event.data.usage))).not.toContain('9999')
   const settled = messages.filter((event) => event.data.usage)
   if (mode === 'complete') {
     expect(settled).toHaveLength(1)

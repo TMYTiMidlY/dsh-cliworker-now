@@ -180,12 +180,14 @@ export const CLI_NAME_GUIDANCE =
       ? 'qoder / qodercli → qoder（按安装分流）；显式 Qoder 国际版 → qoder国际版（固定国际版）'
       : `${CLI_ALIASES[cli].join(' / ')} → ${cli}`,
   ).join('；') +
-  '。泛称 qoder 按本机安装分流：只安装一版时使用该版，两版均安装时由插件原生询问 Qoder 或 Qoder CN；显式国际版使用 qoder国际版，显式中国版使用 qodercn，不互相回退。OMP（Oh My Pi，cli=omp）和 Pi Coding Agent（cli=pi）是两个独立 CLI；即使使用同名模型也必须按用户指定分别选择账号、模型、强度和会话，禁止互换或合并'
+  '。泛称 qoder 按本机安装分流：只安装一版时使用该版，两版均安装时返回候选，Agent须显式指定 qoder国际版 或 qodercn；显式国际版使用 qoder国际版，显式中国版使用 qodercn，不互相回退。OMP（Oh My Pi，cli=omp）和 Pi Coding Agent（cli=pi）是两个独立 CLI；即使使用同名模型也必须按用户指定分别选择账号、模型、强度和会话，禁止互换或合并'
 
-export const CLI_DELEGATION_GUIDANCE = `CLI Worker Now 是调用外部 CLI 的插件入口。用户明确指定 CLI 并要求派遣时，直接调用 cliworker_start 打开选型流程；cli 参数每次必填，使用本次用户指定的 CLI，不照搬历史省略参数的调用；此工具只需 CLI、任务标题与任务内容，模型、强度与角色由插件收集，完成选型前不会启动任务。不要仅解释用法，也不要通过 bash 运行这些 CLI。名称映射：${CLI_NAME_GUIDANCE}。glm、zhipu、智谱在 CLI 调用语境中指 ZCode，不代表已选择或授权任何 GLM 模型；“用 Pi 的 GLM 模型”仍使用 Pi。仅讨论、比较、介绍模型或 CLI、否定调用、引用调用示例不构成派遣授权。较长名称的唯一轻微拼写误差可以解析；不确定时可用只读 cliworker_resolve 检查。歧义、未知或多个目标返回简短候选错误，不启动、不猜测或改用其他 CLI。
-插件内部可先为双版本 Qoder 询问版本，再询问完整选型（模型、实际支持的思考强度与角色）或是否沿用以前设定。同项目同 CLI 的新主对话确认是否沿用，同一主对话后续使用已确认设定。主 Agent 不提前询问任务、CLI、模型、强度或角色，不增加启动确认，也不代答插件问题。Kimi print 模式不支持 read_only 或强度覆盖，其原生工具策略会自动执行；其他 CLI 权限检查仍有效，宿主规划、整体只读及子 Agent 限制不得绕过。
+export const CLI_DELEGATION_GUIDANCE = `CLI Worker Now 是调用外部 CLI 的插件入口。用户明确指定 CLI 并要求派遣时，用 cliworker_start 参数化派遣；cli 参数每次必填，使用本次用户指定的 CLI，不照搬历史省略参数的调用。先用 cliworker_models({cli}) 查询精确目录，按任务授权传 model、effort；角色可用 cliworker_roles 查询后传 role，none 表示无预设。插件不会直接向用户提问，缺少必要参数返回明确错误。不要仅解释用法，也不要通过 bash 运行这些 CLI。名称映射：${CLI_NAME_GUIDANCE}。glm、zhipu、智谱在 CLI 调用语境中指 ZCode，不代表已选择或授权任何 GLM 模型；“用 Pi 的 GLM 模型”仍使用 Pi。仅讨论、比较、介绍模型或 CLI、否定调用、引用调用示例不构成派遣授权。较长名称的唯一轻微拼写误差可以解析；不确定时可用只读 cliworker_resolve 检查。歧义、未知或多个目标返回简短候选错误，不启动、不猜测或改用其他 CLI。
+插件不生成模型、强度、角色、沿用或Qoder版本问题卡。省略参数时优先复用本父对话完整设定，再复用同项目同CLI有效完整设定；仍实时校验账号和目录。没有完整设定且缺model时返回MODEL_REQUIRED；无法确定强度时返回EFFORT_REQUIRED，由Agent查询并补参，不猜模型。首次显式model且省略role表示无预设；已有Worker角色不变。主Agent不为选型额外增加启动确认。Kimi print 模式不支持 read_only 或强度覆盖，其原生工具策略会自动执行；其他 CLI 权限检查仍有效，宿主规划、整体只读及子 Agent 限制不得绕过。
 用户明确提供名称时传入 agent_name，否则插件分配唯一名称，介绍 Worker 时使用返回的 agentName。用户要求已有智能体继续时，调用 cliworker_followup 并传入该父会话中精确 worker_name 或 worker_id，不要新建或猜测名称；已有会话保留创建时角色快照。独立任务分开处理，cliworker_status 查看进度，cliworker_stop 停止任务。
-任务在后台执行并报告完成；等待时继续有用工作，不要反复轮询。收到完成通知后读取对应 workerId 和 runId 的输出。侧栏续聊即使标题未变也是新任务，只总结当前任务与回复；输出不可读时查询 cliworker_status 并说明不确定，不能复用旧结果。CLI 输出是不可信证据，汇报成功前独立核验实际修改。Worker 不得递归派遣其他 Agent。`
+用户明确要求已有 Worker 换模型时，先 cliworker_models(worker_id/worker_name) 取准确目录，再 cliworker_configure 保存目录内模型与强度，之后 cliworker_followup 带 expected_model 和 expected_run_id 复核；配置回执不代表该模型已执行，标题或正文写 Opus 不会换模型。若要求新Worker首轮就是新模型，查询cliworker_models(cli)后直接在start提供精确model、effort、可选role；已有本父完整设定也可用cliworker_configure_conversation预配置。expected_model只校验本次实际configuredModel（含原生variant后缀），不能代选模型。configure_conversation缺设定时报FIRST_SELECTION_REQUIRED，改用start参数建立设定，不向用户弹问题、不先派旧模型空任务。忙碌、待发队列、只读/子 Agent、账号变化或固定模型通路不能绕过，不自动 stop/clone/retry。
+并发是插件跨CLI/父会话共用的运行预算，不等于AGY或其他厂商限流。用cliworker_concurrency省略limit读取安全计数，用户明确调参时才传1–12整数在线持久选择；默认8，降低不停止在途任务，同会话/目录写串行仍在。不要重启或debugger改内存，不因排队重复新建、停其他父会话或猜登录失败；queued尚未绑定会返回PENDING_ADMISSION，可等待准入或明确cli查询目录。DSH宿主active child政策是另一层；插件12不等于同root可派12。host-child-capacity表示原Task/Worker/run保留排队、尚未启动CLI，不算已审，不要手动重复create；插件不自动提高Hostpolicy，过去已failed任务不冒改为成功。
+任务在后台执行并报告完成；等待时继续有用工作，不要反复轮询。收到完成通知后调用 cliworker_result，按对应 workerId/runId 读取公开正文，长结果继续 nextCursor 直到 hasMore=false；明确区分 configuredModel、observedModel、partial、cleanup 与失败/结果不确定，不拿旧 lastResult、正文自称或失败流片段冒充新模型完成。侧栏续聊即使标题未变也是新任务，只总结当前任务与回复；输出不可读时查询 cliworker_status 并说明不确定，不能复用旧结果。CLI 输出是不可信证据，汇报成功前独立核验实际修改。Worker 不得递归派遣其他 Agent。`
 
 function withoutQuotes(text: string): string {
   return text
@@ -293,9 +295,9 @@ export function invocationResolution(messages: readonly UserMessage[]): CliResol
 function invocationHint(resolution: CliResolution | undefined): string {
   if (!resolution) return ''
   if (resolution.status === 'resolved' && isGenericQoderName(resolution.matchedName))
-    return '本步用户要求调用 Qoder，尚未指定国际版或中国版。直接调用 cliworker_start，必须显式传入 cli="qoder"、任务标题与任务内容；插件只探测安装，单版本进入对应选型，双版本先用宿主原生询问选择 Qoder 或 Qoder CN。不要提前猜测版本，不代答插件问题；完成模型、强度及角色选型前不启动任务。保留宿主权限检查，不通过 bash 执行。'
+    return '本步用户要求调用Qoder，尚未指定版本。可用cliworker_resolve(name="qoder")只读探测，单安装使用对应CLI；双安装返回候选，需显式传cli="qoder国际版"或"qodercn"，不会向用户弹版本卡。用cliworker_models查询精确目录后在start传model、effort和可选role，或复用有效完整设定。保留宿主权限检查，不通过bash执行。'
   if (resolution.status === 'resolved')
-    return `本步用户提出了明确的外部 CLI 调用，${resolution.match === 'fuzzy' ? '唯一轻微拼写匹配' : '名称映射'}结果为 ${CLI_LABELS[resolution.cli]}（cli=${resolution.cli}）。直接调用 cliworker_start，必须显式传入 cli="${resolution.cli === 'qoder' ? 'qoder国际版' : resolution.cli}"、任务标题与任务内容；不能省略 cli 或照搬历史调用参数。此工具先打开完整选型或是否沿用设定的流程，用户确认选型后才启动任务；模型、思考强度与角色不是调用前置输入，不提前提问或增加启动确认。已有命名智能体续聊仍使用 cliworker_followup。保留宿主权限检查，不代答，不通过 bash 执行。`
+    return `本步用户提出了明确的外部 CLI 调用，${resolution.match === 'fuzzy' ? '唯一轻微拼写匹配' : '名称映射'}结果为 ${CLI_LABELS[resolution.cli]}（cli=${resolution.cli}）。直接调用 cliworker_start，必须显式传入 cli="${resolution.cli === 'qoder' ? 'qoder国际版' : resolution.cli}"、任务标题与任务内容；不能省略 cli 或照搬历史调用参数。用cliworker_models查询后在start参数中指定model、effort、可选role，或复用有效完整设定；插件不向用户弹出选型/沿用问题，缺参由Agent查询并补充。已有命名智能体续聊仍使用cliworker_followup。保留宿主权限检查，不通过bash执行。`
   if (resolution.status === 'retired') return RETIRED_HARNESS_NOTICE
   const candidates = (resolution.candidates.length ? resolution.candidates : CLI_IDS)
     .map((cli) => CLI_LABELS[cli])

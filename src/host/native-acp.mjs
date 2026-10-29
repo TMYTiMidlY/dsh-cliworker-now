@@ -1,6 +1,7 @@
 // ACP is JSON-RPC 2.0 over NDJSON. Kimi and Grok retain their own config wire.
 import { nativeHarnessMcpServers, nativeHarnessAcpApproval } from './native-harness-injection.mjs'
 import { nativeAttachmentInput } from './native-attachments.mjs'
+import { randomUUID } from 'node:crypto'
 export const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 export const nonempty = (value) => typeof value === 'string' && value.trim().length > 0
 
@@ -61,6 +62,9 @@ async function selectOption(peer, sessionId, state, id, value, encode, required 
 /** Runs exactly one turn; restored history is deliberately ignored before prompt admission. */
 export async function runNativeAcp(config, io, settings) {
   const wantedMode = config.mode === 'plan' ? 'plan' : settings.editMode
+  // Optional adapter fence. LinePeer can deliver a result and more notifications
+  // synchronously from one buffer before the await request continuation resumes.
+  const promptRequestId = settings.fencePromptResult ? randomUUID() : undefined
   let peer,
     sessionId,
     active = false,
@@ -91,7 +95,18 @@ export async function runNativeAcp(config, io, settings) {
       fail('Invalid ACP JSON-RPC envelope')
       throw new Error('Invalid ACP JSON-RPC envelope')
     }
-    if (!nonempty(message.method)) return
+    if (!nonempty(message.method)) {
+      const resultOnly = Object.hasOwn(message, 'result') && !Object.hasOwn(message, 'error')
+      const errorOnly = !Object.hasOwn(message, 'result') && Object.hasOwn(message, 'error') && isRecord(message.error) &&
+        Number.isSafeInteger(message.error.code) && typeof message.error.message === 'string'
+      if (active && !ended && promptRequestId !== undefined && message.id === promptRequestId && !message.method) {
+        // Match LinePeer's response-candidate boundary, but never bless its
+        // permissive falsy-method/mixed-result shapes as valid ACP responses.
+        ended = true
+        if (Object.hasOwn(message, 'method') || !(resultOnly || errorOnly)) fail('ACP 本轮响应格式无效')
+      }
+      return
+    }
     if (!peer) {
       early.push(message)
       return
@@ -103,11 +118,16 @@ export async function runNativeAcp(config, io, settings) {
           if (approved) return peer.send({ jsonrpc: '2.0', id: message.id,
             result: { outcome: { outcome: 'selected', optionId: approved } } })
         }
-        if (active && message.params?.sessionId === sessionId) {
+        if (active && (!settings.fencePromptResult || !ended) && message.params?.sessionId === sessionId) {
           fail('CLI 请求的额外权限已拒绝')
           io.event({ kind: 'diagnostic', text: 'CLI 额外权限请求已拒绝' })
         }
         const reject = message.params?.options?.find((option) => option.kind === 'reject_once')
+        // Only observe the actual locally chosen reject/cancel, not an earlier
+        // approval attempt or malformed request that never reaches this reply.
+        const deniedId = message.params?.toolCall?.toolCallId
+        if (active && !ended && message.params?.sessionId === sessionId && nonempty(deniedId))
+          settings.permissionDenied?.(deniedId, sessionId)
         return peer.send({
           jsonrpc: '2.0',
           id: message.id,
@@ -152,6 +172,9 @@ export async function runNativeAcp(config, io, settings) {
       if (seen.has(eventId)) return
       seen.add(eventId)
     }
+    // Optional adapter-only observation AFTER admission, session filtering and
+    // native event-id deduplication. Grok's extension receive rail stays above.
+    settings.acceptedUpdate?.(update, sessionId)
     if (update.sessionUpdate === 'agent_message_chunk' && update.content?.type === 'text') {
       finishThought()
       if (typeof update.content.text !== 'string') {
@@ -190,7 +213,7 @@ export async function runNativeAcp(config, io, settings) {
       }
       tools.set(update.toolCallId, value)
       if (value.status === 'failed') fail('CLI 工具执行失败')
-      emit({
+      const toolEvent = {
         kind: 'tool',
         step: value.step,
         text: value.title,
@@ -203,7 +226,9 @@ export async function runNativeAcp(config, io, settings) {
           ...(Object.hasOwn(update, 'rawOutput') ? { output: update.rawOutput } :
             ['completed', 'failed'].includes(value.status) && Array.isArray(update.content)
               ? { output: update.content } : {}) },
-      })
+      }
+      // Projection never changes the common tool status/sticky hard failure.
+      emit(settings.projectTool ? settings.projectTool(toolEvent, update, sessionId) : toolEvent)
     }
   }
   const cancel = () => {
@@ -290,7 +315,7 @@ export async function runNativeAcp(config, io, settings) {
         sessionId,
         prompt: await nativeAcpAttachmentPrompt(config, initialized.agentCapabilities, io.signal),
       },
-      { jsonrpc: true, timeoutMs: config.timeoutMs },
+      { jsonrpc: true, timeoutMs: config.timeoutMs, ...(promptRequestId !== undefined ? { id: promptRequestId } : {}) },
     )
     ended = true
     // Kimi emits its context snapshot asynchronously AFTER settling prompt.

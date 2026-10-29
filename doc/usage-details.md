@@ -73,7 +73,7 @@ irm https://qoder.com/install.ps1 | iex
 
 已有 Node.js 环境也可使用官方保留的 npm 兼容入口 `npm install -g @qoder-ai/qodercli`。完成后运行 `qoder --version` 和 `qoder login`，按原生浏览器流程登录；CLI 也支持自身的 `QODER_PERSONAL_ACCESS_TOKEN`。不要把令牌写入聊天或仓库。安装和登录由用户按需完成，本次接入没有自动安装或登录 Qoder。
 
-Qoder 中国版使用独立入口 **Qoder CN CLI**（`cli=qodercn`），默认用户目录 `~/.qoder-cn`、登录变量 `QODERCN_PERSONAL_ACCESS_TOKEN`，不读取国际版账号或偏好。安装与原生登录命令见 [中国版官方说明](https://docs.qoder.cn/cli/installation)，npm 兼容包为 `@qodercn-ai/qoderclicn`。Windows 自动识别 `~/.qoder-cn/bin/qoderclicn/qoderclicn.exe`，并核验同品牌 npm 入口；无需借用国际版路径。两版模型和强度均动态读取，不能照搬对方档位。用户泛称“调用 Qoder”时，仅安装一版则使用该版；两版均安装时，插件先弹原生询问框选择 Qoder 或 Qoder CN，再进入模型选型。明确说“Qoder 国际版”或“Qoder 中国版 / qodercn”时固定对应版本。旧会话保持原品牌，不自动迁移。
+Qoder 中国版使用独立入口 **Qoder CN CLI**（`cli=qodercn`），默认用户目录 `~/.qoder-cn`、登录变量 `QODERCN_PERSONAL_ACCESS_TOKEN`，不读取国际版账号或偏好。安装与原生登录命令见 [中国版官方说明](https://docs.qoder.cn/cli/installation)，npm 兼容包为 `@qodercn-ai/qoderclicn`。Windows 自动识别 `~/.qoder-cn/bin/qoderclicn/qoderclicn.exe`，并核验同品牌 npm 入口；无需借用国际版路径。两版模型和强度均动态读取，不能照搬对方档位。用户泛称“调用 Qoder”时，仅安装一版则使用该版；两版均安装时返回歧义候选，Agent 必须显式传 `cli=qoder国际版` 或 `cli=qodercn`，不弹版本询问卡。明确说“Qoder 国际版”或“Qoder 中国版 / qodercn”时固定对应版本。旧会话保持原品牌，不自动迁移。
 
 Windows 各 CLI 共用有界路径发现：显式路径优先，复用常见用户 bin/npm/Bun/Scoop/pnpm 目录，并在进程 PATH 缺失后读取最新用户和机器 PATH。专属目录、npm 包名和原生程序身份仍按 CLI 声明核验；自定义便携位置既未加入 PATH 又无安装登记时仍需设置路径。不扫描任意磁盘、不猜最新版本、不执行桌面 GUI。详见 [中国版协议与隔离](qodercn-protocol.md)。
 
@@ -172,7 +172,7 @@ v0.8.1 原生会话候选的最新协议和数据覆盖见 [全 CLI 复查](cli-
 
 ## 6. 使用方法
 
-CLI 返回公开思考时，生成中可查看原生摘要预览，结束后展开“已完成，用时…”的原生过程，再点击其中的“思考记录”查看各段内容；关闭重开仍保留。全部 13 种 CLI 使用同一入口，实际内容取决于原生协议和模型是否返回。Codex 新轮会请求公开摘要，已返回的公开增量实时进入原生过程，停止或失败后保留已公开内容；旧轮没有摘要时不会补造。详见 [公开过程说明](public-process.md)。
+CLI 返回公开思考时，生成中可查看原生摘要预览，结束后展开“已完成，用时…”的原生过程，再点击其中的“思考记录”查看各段内容；关闭重开仍保留。已接入的 CLI 共用此入口，实际内容取决于原生协议和模型是否返回。Codex 新轮会请求公开摘要，已返回的公开增量实时进入原生过程，停止或失败后保留已公开内容；旧轮没有摘要时不会补造。详见 [公开过程说明](public-process.md)。
 
 ### 6.1 首次派遣
 
@@ -188,24 +188,19 @@ CLI 返回公开思考时，生成中可查看原生摘要预览，结束后展�
 
 `agy` 对应 **Antigravity**，`glm / zhipu / 智谱` 对应 **ZCode**，`harmes` 对应 **Hermes Agent**。插件会为当前明确调用提供路由提示，并在派遣工具里统一解析名称；支持 `Antigravity（agy）CLI` 这样的同名别名，重复指定同一 CLI 仍视为一个目标。较长名称的轻微拼写误差只有唯一候选时才接受。未知名称或多个目标返回简短错误和候选，不自动派遣，普通模型讨论、否定调用和引用示例不会触发路由提示。是否调用工具仍由 Harness 主模型决定；如果模型忽略请求，可明确说“使用 CLI Worker 插件调用 agy CLI”。
 
-首次使用相应项目和 CLI 时，通过 Harness 原生问题卡片选择：
+CLI Worker 由 Agent 通过调用参数指定选型，不直接向用户弹模型、强度、角色或沿用问题卡：
 
-1. **模型**：来自该 CLI 的实际目录。
-2. **思考强度**：仅提供当前模型支持的选项。
-3. **智能体预设**：选择已有角色、不使用预设，或在“其他”里写临时提示词。
+1. 用 `cliworker_models({cli})` 查询精确模型 ID、实际支持的 `efforts`。
+2. 可用 `cliworker_roles()` 查询预设 ID、名称及摘要；在 `cliworker_start` 传 `role=<精确ID>`，或 `role="none"` 明确不使用预设。
+3. 在 `cliworker_start` 传 `cli`、`title`、`prompt`、`model`、`effort` 和可选 `role`。首次显式模型但没有有效完整旧设定且省略角色，表示不使用预设。
 
-模型、强度和角色全部确认后，才保存设定并启动任务。只会出现两类询问：
+省略选型参数时优先复用当前主对话完整设定，再复用同项目同 CLI 有效完整设定；不再询问是否沿用。旧版只有模型/强度的偏好不是完整设定，缺 `model` 返回 `MODEL_REQUIRED`；模型有多个强度且没有可复用值或原生 default 时返回 `EFFORT_REQUIRED`，由 Agent 查询并补参，不猜模型/强度、不产生任务或半套设定。当前主对话失效设定不会悄悄换用另一个项目默认。首次参数选择、复用和启动仍重新检查当前自身账号、模型、权限与取消；登录和权限审批不是选型问题卡，门禁保持。
 
-- **选择模型、思考强度和角色**：项目中首次使用该 CLI，或选择重新设置时出现。先选模型，再选择它支持的强度和角色。
-- **是否沿用以前的设定**：同项目、同 CLI 的新主对话首次调用时出现；沿用即使用整套设定，重新选择则回到选型。
-
-同一主对话之后的调用直接使用已确认设定，重启后也不会重复询问。取消或未完整回答不保存半套设定、不启动任务。旧版只保存模型和强度的偏好，升级后首次需补全整套选择。
-
-明确调用 CLI 时，当前请求会携带对应 CLI 的派遣指引：直接调用 `cliworker_start` 打开选型，模型、强度和角色由插件收集，选型完成后才启动任务。每次工具调用必须显式传入 `cli`（Antigravity 也一样）；漏传会返回参数错误，不会采用上次调用或默认 CLI。主模型无需预先提问角色或确认启动；通用提问工具保持不变。
+每次工具调用必须显式传入 `cli`（Antigravity 也一样）；漏传只返回参数错误，不采用上次调用或默认 CLI。当前明确调用携带参数化派遣指引，通用提问工具保持不变。
 
 各 CLI 只使用自身原生登录，或在该 CLI 自己的配置／私有 `.env` 中单独设置的 API Key。模型与强度按“本 CLI 支持”与“当前自身账号可用范围”筛选；Claude 自身显式网关配置按第 4 节的专门规则展示候选，并说明远端可用性未核验。公共目录、旧缓存、固定别名和匿名免费模型不能单独成为可选依据；未满足上述证据条件时显示空列表及简短原因。账号范围使用只读模型查询，不通过生成请求试探权限。
 
-设置、模型菜单和任务卡片只显示模型名称，删除服务商、组织路径前缀及括号附注；同一原生模型去重，不同原生模型同名时仍保留独立选项，保存和执行使用完整路由 ID。新选择优先有明确证据且可用的免费额度，缺省零成本和价格未知不当免费。有效的既有选择保持不变，首次使用仍须由你选型，免费路由失败也不会自动转为付费请求。
+设置、模型菜单和任务卡片只显示模型名称，删除服务商、组织路径前缀及括号附注；同一原生模型去重，不同原生模型同名时仍保留独立选项，保存和执行使用完整路由 ID。新选择优先有明确证据且可用的免费额度，缺省零成本和价格未知不当免费。有效的既有选择保持不变，首次使用由 Agent 按任务授权提供精确选型参数，免费路由失败也不会自动转为付费请求。
 
 OMP（Oh My Pi）与 Pi Coding Agent 是两个独立 CLI；安装、账号、模型和会话各自管理，即使使用相同模型也不能互换。插件核验实际执行程序身份；Pi 优先使用已核验的原生安装，不暗中切换到另一旧版。
 
@@ -239,7 +234,7 @@ v2 每轮只提交一次耐久 input ID；ACK 丢失先核对同 ID 的 inbox、
 
 正常服务重启不破坏已完成会话的稳定 credential 来源绑定；每轮仍另固定服务 epoch。外部原生界面若向 owned 会话插入或修改历史，即便现已空闲也拒绝继续使用该历史，不删除外来内容。真实 DSH 子会话仍创建并投影回复，但不会分配工具/MCP lease。账号终端仅由用户主动打开，不注入登录/退出、不自动启动服务、不读取或复制凭据数据库；服务密码只走 Host 私有环境和回环认证，不进入 Gateway、请求文件或 ledger。当前验收为实际 Host/bridge/DSH 子会话对合成 v2 服务；真实 OpenCode 服务、模型、GUI 与非 Linux 未验收。
 
-Codex 能读取模型但当前额度耗尽时，设置明确提示等待额度恢复；认证失效或访问被拒绝单独提示检查登录。两者都保留现有账号和项目偏好，不把原生模型能力当成当前可调用权限。
+Codex 仅在本次可核验检查明确拒绝时分别提示额度耗尽或认证不可用，保留现有账号和项目偏好，不把原生模型能力当成当前可调用权限。本轮新增诊断区分可用范围未知、原因未确认的拒绝、真实空目录、原生能力无交集和来源变化；未知不等于已登出或无额度。曾显示模型也不能绕过下一次fresh准入检查，查询期间换来源会拒绝，同主体正常token轮换不当换号；不会借用旧目录、自动重试或换号。源码、已部署和实机范围分别见[验收记录](tasks.md)。
 
 Kimi 已有有效或可续期的自身原生登录时显示“已登录”及可确认的简短账号 ID；原生未保存邮箱或昵称时不编造，点击“管理登录”打开原生终端；切换账号由用户输入 `/logout` 后再输入 `/login`。账号终端使用独立空目录，不加载用户项目 MCP；原生若显示 Trust 提示，由用户自行确认。只有 managed OAuth 引用而没有对应令牌时才显示未登录，不会自动退出原账号。自身 API 配置则保持“已配置”，不要求另有 OAuth 令牌：Kimi 2.2 的内联密钥、对应提供商类型的私有 env、明确的 apiKeyEnv 引用按同一原生顺序解析。显式引用缺值显示配置未就绪，冲突或未支持的来源不用于绑定，不能回退另一把密钥。任务仅传选定模型声明的必要环境值，账号终端仅传自身明确引用；不复制整个宿主环境，也不把值写入 argv、公开记录或桥请求。KIMI_MODEL_* 全局覆盖暂不支持。此次当前本地 API 配置读取成功，不代表已复现用户此前的界面误报或确认远端调用权限。
 
@@ -251,10 +246,10 @@ Grok 先核对自身官方 Build 访问门禁，再读取认证模型目录并�
 
 ```mermaid
 flowchart LR
-    A[项目首次使用该 CLI] --> B[模型 · 强度 · 角色]
-    N[同项目新主对话调用该 CLI] --> Q{是否沿用以前设定}
-    Q -->|否| B
-    Q -->|是| C[有名字的独立智能体]
+    A[Agent 查询目录] --> B[显式 model · effort · role]
+    N[省略选型参数] --> Q{有效完整设定}
+    Q -->|否| R[明确错误，不提问]
+    Q -->|是| C[校验后创建独立智能体]
     B --> C
     C --> D[侧栏查看过程与结果]
     D --> E[结果返回主对话]
@@ -330,20 +325,32 @@ CLI 子会话可使用 Harness 的目标、规划、反馈与分支。不支持�
 | 功能 | 行为 | 支持范围 |
 | --- | --- | --- |
 | 目标 | 输入框上方目标栏、“+”菜单或 `/goal` 可设置、编辑、暂停、恢复或清除。目标处于活动状态时，插件会把它以界定块形式放在每一轮发给 CLI 的输入前；子会话里仍显示原消息。目标不会自动发起新一轮，也不使用 CLI 自带的目标续轮功能。 | 全部 CLI |
-| 规划 | 沿用原生规划或只读模式映射，可从“+”菜单、权限控件、规划标记或 `/plan` 进入。这些 CLI 不显示规划标记；“+”菜单中的“计划”保留并提示原因。它们只有“允许编辑”一种权限模式，权限控件同样禁用并提示原因。 | Hermes、Qoder、Qoder CN 及旧版 Kimi 通路禁用 |
+| 规划 | 沿用原生规划或只读模式映射，可从“+”菜单、权限控件、规划标记或 `/plan` 进入。这些 CLI 不显示规划标记；“+”菜单中的“计划”保留并提示原因。它们只有“允许编辑”一种权限模式，权限控件同样禁用并提示原因。 | Hermes、MiniMax、Qoder、Qoder CN 及旧版 Kimi 通路禁用 |
 | 反馈 | 赞、踩和反馈对话框使用 Harness 的反馈服务，仅记录在 Harness；不会发送给 CLI 或厂商，也不会进入模型上下文。 | 全部 CLI |
-| 分支 | 消息分支按钮、会话菜单、快捷键或 `/fork` 会调用 CLI 的原生分支，生成新的原生会话，并在同一主会话下新建 Worker 子会话、复制截点之前的历史；原会话可以继续使用。运行中或有排队消息时不能分支。 | 最新完成轮：Codex、Claude Code、Kimi（ACP）、MiMo、ZCode、Pi、OpenCode、Qoder、Qoder CN；较早完成轮：仅 Codex。Antigravity、Hermes、Grok、OMP 暂不支持 |
+| 分支 | 消息分支按钮、会话菜单、快捷键或 `/fork` 会调用 CLI 的原生分支，生成新的原生会话，并在同一主会话下新建 Worker 子会话、复制截点之前的历史；原会话可以继续使用。运行中或有排队消息时不能分支。 | 最新完成轮：Codex、Claude Code、Kimi（ACP）、MiMo、ZCode、Pi、OpenCode v1、Qoder、Qoder CN；较早完成轮：仅 Codex。Antigravity、Hermes、Grok、OMP、MiniMax、OpenCode v2 暂不支持 |
 
 Claude Code 的分支会在新分支的第一轮使用 `--resume … --fork-session` 生成新会话 ID。各 CLI 的核实依据见 [设计说明](design.md)。
 
-ZCode 从原生消息列表中的最新助手消息创建包含该轮的分支，纯对话无需工作区检查点。Pi、OpenCode、ZCode 的新分支沿用源会话的原生状态目录，重启及再次分支后仍使用同一原生会话存储。
+ZCode 从原生消息列表中的最新助手消息创建包含该轮的分支，纯对话无需工作区检查点。Pi、OpenCode v1、ZCode 的新分支沿用源会话的原生状态目录，重启及再次分支后仍使用同一原生会话存储。
+
+### 6.5 Agent 精确换模与逐轮结果（控制面候选）
+
+- `cliworker_models` 用本父会话精确 Worker 名/ID 查询；也可明确 `cli` 查询本父会话目录，无需先创建 Worker，两种选择器互斥。只读目录不建立首次确认、不是远端额度保证。
+- 已有 Worker 换模：目录 → `cliworker_configure` → `cliworker_followup(expected_model=cfg.configuredModel, expected_run_id=cfg.previousRunId)`。保留原生会话、角色与权限，只改这个 Worker。`configuredModel` 是已解析的实际执行 ID，可能包含 native effort variant 后缀，不能拿目录分组 ID 代替。
+- 新题首轮即新模型：目录 `cli` 查询 → 直接 `cliworker_start(model=…, effort=…, role=…)`；已有完整设定也可先 `cliworker_configure_conversation` 再 `start(expected_model=cfg.configuredModel)`。configure_conversation 缺设定返回 `FIRST_SELECTION_REQUIRED`，改用 start 参数建立，不弹首次卡、不先跑旧模型空题。只改本父会话/project/CLI setup，项目默认、其他父会话和已有 Worker 不变。start 的 expected_model 只校验；若配置和 start 之间被并发改回旧模型，零 Worker/零 prompt 拒绝。
+- UI 与 Worker 配置共用空闲/准备/原生 inbox/暂停队列/清理/固定 transport 门禁；确认设定与首次选择共用同一串行锁。配置与续聊异步目录/账号检查后仍复核权限、source、project、模型及前序 run，最终 Runtime 准入再次检查，不自动 stop/clone/retry。
+- `cliworker_result(worker_id, run_id)` 返回该轮公开正文；指定轮不存在不退最新。按 `nextCursor` 作为 `cursor` 继续，页面绑定 Worker/run/事件水位和摘要，追加、新轮、Host 重启不会混页。不混入思考/工具/原始私密数据，也不借旧 lastResult。无 scope 的 SUCCESS 汇总即便以当前片段为前缀也不能补入历史尾文；无 stream 时仅明确可信 run-scoped SUCCESS 可补正文。旧缺证据明确未知，不迁写历史。
+- `configuredModel`、`observedModel`、`targetModelVerified`、原始状态、部分性和 `cleanup` 独立；completed 但模型冲突或观察缺失不计作目标模型完成。failed/interrupted/uncertain 的实际公开片段可取回，不是另一个审阅阶段；读取不会自动续跑。新控制回执带 `controlApiVersion: 1`；仅包名/0.8.2相同不能证明已安装新功能，需 bundle hash、工具 schema、实际回执分别核查。
+- 原生 child 在异步中间件前捕获 claimed 输入；working-directory/runtime-context 通知不单独准入、不混入正文。按来源而不是文案过滤，真实用户输入相同目录文案仍执行，混合用户/上下文保留真实提交。源码用官方 AgentLoop 合成反例验证，真实旧在线包的额外目录轮次不能算正常任务成功。
+- 2026-10-24 父会话旧在线数字身份修复包已验证 Cursor 只读生成、同会话记忆、原生 Read、停止与停止后续聊，不等于新控制面/换模/effort/工具桥/附件/写入/GUI或Windows已过。MiniMax最新真实准备在provider认证/服务覆盖门禁先拒绝，尚未证明本次未登录。Kimi旧GUI未复现、OpenCode v2原生服务/模型未验收等边界保留，其他change的真实任务不因此勾选。
 
 ## 7. 权限、数据与常见问题
 
 ### 7.1 执行与数据边界
 
 - **按明确选择执行**：CLI 缺失或失败时不会自动换用另一个 CLI；不接管在插件外启动的 CLI。
-- **调度有边界**：默认两个并发；同一 CLI 会话单轮互斥，同一目录的写任务串行。仅支持主对话 → 直接子智能体两层结构，v0.8.1 原生界面按 DSH Inbox 与 CLI 实际引导能力处理运行中消息；历史兼容路径的插队仍须等待进程清理，不并发运行同一会话。不支持递归派遣。
+- **调度有边界**：插件全CLI/父会话共享运行预算默认8，可在“并发与排队”或cliworker_concurrency显式设1–12，非厂商配额；私有明确选择优先初始config。父会话轮转且各自FIFO，前方同目录写任务仍是屏障，运行中不抢占。提高立即drain可运行队列，降低不停止原任务。状态仅报真实容量/写冲突/准备阶段，占位含准备和清理；设置页计数为可刷新快照。坏设置failclosed保留诊断，不静默退默认；queued尚未绑定的新任务为PENDING_ADMISSION而非历史账号缺失。同一 CLI 会话单轮互斥，同一目录的写任务串行。仅支持主对话 → 直接子智能体两层结构，v0.8.1 原生界面按 DSH Inbox 与 CLI 实际引导能力处理运行中消息；历史兼容路径的插队仍须等待进程清理，不并发运行同一会话。不支持递归派遣。
+- **宿主容量独立**：DSH active-child政策按managed root pool计槽，插件global12不等于单root可派12，更不是AGY配额。新延期准入候选在typed容量拒绝且无真实child/native、暂态绑定回滚确认后，将同Task/Worker/run原位queued并释放插件槽，显示host-child-capacity，不写failedJob或重复create。事件优先且以2–30秒one-shot补偿无end回滚，等待不消耗执行timeout；取消/权限变化/清理未知不复活或泛重试，不伪造Host闲槽数、不自动改Hostpolicy或旧失败记录。是否已部署与真实任务验收另核。
 - **权限按原生能力处理**：Harness 规划模式或只读权限下拒绝启动。允许执行后，支持的 CLI 可按只读任务模式派遣；新 Kimi ACP 任务需确认原生 plan 模式，旧 Kimi 通路、Hermes 和 Qoder 仍拒绝只读派遣。插件不附加 OS 沙箱，各 CLI 的原生权限与工具限制见专项文档。
 - **记录保存在本机**：默认位于 `$DSH_HOME/cliworker-now`（通常为 `~/.dsh/cliworker-now`），POSIX 系统中目录权限 `0700`、文件 `0600`。外部 CLI 仍会按自己的服务与配置发送模型请求，不能据此认为任务完全离线。
 - **用量有来源**：只展示 CLI 提供或可核查的统计；数据不足时三个原生模块仍保留，以 `—` 和原生详情说明缺失原因，不补零；上下文占用与累计 Token 不是同一指标。估算保留 `~` 标记，详情不展示来源说明行。
@@ -402,6 +409,8 @@ DSH skill、已配置 MCP 和普通工具来自当前子 Agent 的实际授权�
 原生 CLI 会话加号菜单与原生菜单一致，分“添加”“指令”两段并沿用原生图标与名称：“添加”含文件、图片、目标、计划、反馈，“指令”含权限、模型、分支；输入关键字时按原生规则排序。其中“文件”和“图片”：macOS / Windows Desktop 文件沿用原生本地引用，图片沿用 Harness 上传；已经准入的原生附件按 CLI 协议转换为图片块、资源链接或可读取路径。重试校验包含附件身份，运行中附件保留原生队列。Skill/MCP 继续复用真实子 Agent 的工具桥，ACP 仅准入精确的本轮桥工具。各 CLI 的接入、限制和平台证据见 [附件、Skill 与 MCP 能力矩阵](cli-harness-capabilities.md)。
 
 AGY 续聊若本轮已完整返回但最终汇总为 ERROR，会在证据充分时显示「结果待核实」，保留本轮回复和原始错误；这不代表任务成功或已证实错误来自历史。请先核查实际结果，避免重复写入。宿主后台任务仅有成功/失败/中断三类，其外层仍显示失败，但详情及回传结果会明确区分 `uncertain`。真实本轮错误、非零退出、部分输出和取消仍保留失败或中断状态。
+
+本轮Native流候选对AGY/Cursor的待核实结果另用`CLI_RESULT_UNCERTAIN`，保守保留error finish。当前固定SDK不支持该终态，内置turn仍可能显示红色Failed；说明文字会明确兼容限制，不能把它当成功或已证业务失败，旧turn也不会追改。`CLI_OPERATION_CANCELLED`只说明请求已取消，不证明零执行；不透明错误不会直接字符串化对象。清理或投递未确认始终优先，先核对本轮回执和产物，不自动重发。部署与新流GUI验收状态见[实施记录](tasks.md)。
 
 已结束且无正文的中间回复收纳在「工作过程」，可展开查看步骤用量、时间及 CLI 报告的耗时。任务时长采用本轮本地计时，AGY 上游耗时和用量标注为会话累计，不与步骤统计重复相加；正在流式输出的回复、工具和错误记录继续展示。
 
@@ -463,9 +472,11 @@ Codex 中选择 `openspec-propose` 技能准备方案，再用 `openspec-apply-c
 
 - 规范 ID `minimax`，与 Xiaomi MiMo 完全独立；别名 `minimax code`、`mmx`、`mcode`。默认 CLI 入口为 `~/.minimax-code/bin/mcode`，可通过路径设置或 `minimaxExecutable` 覆盖；Windows 仅接受显式 mcode CLI 入口，未实机验收。
 - 自身数据根按显式 `minimaxHome` > 当前非空 `MINIMAX_DATA_DIR` > 当前非空 `MAVIS_DATA_DIR` > `~/.minimax` 选取。区域遵循当前明确原生区域、prod 原生偏好及唯一有效状态；不扫描或选择 shell 中其他账号包装目录。
-- 首阶段只支持标准 prod/cn、prod/en 的原生 file token_plan OAuth。当前 API、自定义默认路由、提供商或模型级请求头/服务/认证覆盖明确拒绝。原生配置指纹与文件版本参与绑定，保留 OAuth 文件不能授权切换后的 API/custom 来源。原生 provider list 中默认存在 OAuth 行不证明登录，API provider 列表和遮罩 key 不作为当前支持范围。
-- 凭据文件、状态及必要身份缓存采用有界、私有、no-follow 一致性读取；核对 client、audience、scope、generation、region/env。仅使用稳定 subject/accountId 或与当前 token 指纹精确匹配的 verified realUserID。缓存单独不能证明登录；缺少稳定主体、等待原生续期或有效期少于一分钟时保留准确的已配置/待续期状态，不猜身份或自行刷新。
+- 首阶段只支持标准 prod/cn、prod/en 的原生 file token_plan OAuth。2026-10-24 配置兼容修复允许原生三个精确 HTTPS 托管 origin（无 URL 用户凭据）的显式 baseURL，以及缺省或字面量 `sk-xxx` 占位 key；显式 authMode 优先，仍须与 token_plan、minimax 默认提供商和 Anthropic npm 一致，且必须再通过原有 OAuth 检查。占位不证明登录，普通 provider key 不做 ENV 插值。API、自定义默认路由、未知提供商或模型级请求头/服务/认证覆盖继续明确拒绝。原生配置指纹与文件版本参与绑定，保留 OAuth 文件不能授权切换后的 API/custom 来源。原生 provider list 中默认存在 OAuth 行不证明登录，API provider 列表和遮罩 key 不作为当前支持范围。
+- 凭据文件、状态及必要身份缓存采用有界、私有、no-follow 一致性读取；核对 client、audience、scope、generation/loginEpoch、region/env、至少一分钟有效期。稳定主体只来自当前 token 关联的 verified native cache，或固定原生 userinfo 成功的字符串 realUserID；不信未核实的 record.subject/accountId、legacy profile、placeholder 或 token 哈希。普通摘要只读本地，身份缺失保持已配置；正式目录/绑定可先做一次原生固定区域 metadata GET（3秒、可取消、redirect:error、64KiB），不启动 CLI/模型、不自动刷新/重登或改原生文件。
+- userinfo 使用原生区域身份 host，不使用模型 baseURL 或自定义服务；只取 ID 的稳定摘要，PII、URL/query/header/body/error不进入公开结果。source/state/credential 文件指纹/版本及选区元数据前后重核含 ABA，变更则丢弃。30秒非滑动内存缓存按 source/token-epoch 关联，pending 可合并且各调用者取消隔离；无主体/验证失败仍不准入模型。
 - 模型通过认证后的 ACP v1 initialize/session-new 读取，保留原生 `m:<encoded provider>:<encoded model>:u` / `:v:<variant>`，包括原生空 variant。仅当前受支持的 minimax provider 进入选项；切换每个模型后重新读取 thinkingEffort，不能把旧模型强度搬给新模型。查询不发 prompt，可能留下空原生会话，不删除用户历史；取消/范围退出和账号来源一致性未确认不发布目录。
 - 任务使用 `minimax-acp-v1`。prompt 前确认模型、强度、进程级 `permissionMode=default`（Ask）及 default 会话模式；不会切换 auto/bypassPermissions。Plan 的 next_prompt 延迟转移暂不开放；附件、工具/MCP 注入、分支、实时引导均关闭。额外客户端权限/文件/终端/问题请求拒绝。续聊保留原 cwd 与精确会话 ID，取消先通知原生再等待进程范围退出。
 - Cursor 与 MiniMax 新 ACP 通路仅保存解析后的公开过程，不转发原始 RPC/error/auth 记录或原始 stderr；其他 CLI 的既有遥测通路不变。未知用量不补零。
-- 当前实际零 prompt 探测只确认原生初始化，默认来源 session/new 返回原生 `mcode login` 要求。没有已认证目录、真实生成/续聊/停止、浏览器或 Windows 验收；不能称其为仅插件识别问题，也不会自动换到其他账号绕过。
+- 2026-10-22 login-required、后续配置误拒及稳定主体错误均为历史阶段。身份增量部署后，最新正式 models 已进入 ACP 目录失败，具体原因未证；用户原生 hello/M3.1-Flash/订阅限免/Effort max 成功不等于插件目录或本次userinfo HTTP成功。不让用户盲清/重登，不自动换账号。
+- 新目录诊断候选只附固定阶段/原因token、安全bool与白名单RPC/退出信息，如 `[initial_state/permission_control_missing]`；首错不被后续取消/退出覆盖，cleanup独立且未知仍阻止准入。无原始输出、错误、标识、凭据或路径，无新持久日志；不补假控件、不增加15秒总时限、不改变成功目录/max。真实根因、模型/续聊/停止、GUI及Windows仍待父会话独立验收。

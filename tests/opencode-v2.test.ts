@@ -74,8 +74,26 @@ async function fixture() {
 }
 
 describe('OpenCode version and explicit execution boundary', () => {
-  it.each(['1.2.3', 'opencode 1.2.3\n', '2.0.31', 'opencode version 2.0.31-beta.1'])('accepts exact native semver %s', raw => expect(parseOpenCodeVersion(raw).major).toBe(raw.includes('1.2.3') ? 1 : 2))
-  it.each(['', '{}', 'PRIVATE_AUTH_ERROR', '3.0.0', '2.0.31\nPRIVATE', 'version 2'])('never infers v1 from unsupported output %s', raw => expect(() => parseOpenCodeVersion(raw)).toThrow('不会回退'))
+  it.each(['1.2.3', 'opencode 1.2.3\n', '2.0.31', 'opencode version 2.0.31-beta.1', 'opencode v1.2.3\n', 'opencode v2.0.31\n'])('accepts exact native semver %s', raw => expect(parseOpenCodeVersion(raw).major).toBe(raw.includes('1.2.3') ? 1 : 2))
+  it.each(['', '{}', 'PRIVATE_AUTH_ERROR', '3.0.0', '2.0.31\nPRIVATE', 'version 2', 'other v2.0.31', 'opencode vv2.0.31', 'opencode v3.0.0', 'opencode v2.0.31\nPRIVATE', 'opencode\nv2.0.31', 'opencode\n2.0.31', 'opencode version v2.0.31', 'OpenCode v2.0.31', '\u001b[32mopencode v2.0.31\u001b[0m'])('never infers v1 from unsupported output %s', raw => expect(() => parseOpenCodeVersion(raw)).toThrow('不会回退'))
+  it.each([
+    ['', 'empty'],
+    ['\u001b[32m2.0.31\u001b[0m', 'ansi'],
+    ['2.0.31\nPRIVATE_VERSION_TOKEN', 'multiple-lines'],
+    ['2.0.31\u0000', 'control-characters'],
+    ['v2.0.31', 'v-prefix'],
+    ['OpenCode 2.0.31', 'noncanonical-prefix'],
+    ['2.0.31-beta.1+native', 'prerelease-and-build'],
+    ['3.0.0', 'unsupported-major'],
+    ['PRIVATE_AUTH_VERSION_TOKEN', 'unrecognized'],
+  ])('returns only safe version shape diagnostics for %j', (raw, format) => {
+    let message = ''
+    try { parseOpenCodeVersion(raw) } catch (error) { message = (error as Error).message }
+    expect(message).toContain('versionDiagnostic: format=' + format + ',')
+    expect(message).toContain('chars=' + raw.length)
+    expect(message).toContain('不会回退旧认证协议')
+    expect(message).not.toMatch(/PRIVATE_|\u001b|\u0000/)
+  })
   it('rejects malformed, noncanonical and invalid UTF8 model tuple encodings', () => {
     const tuple = ['provider', 'model', null], encoded = Buffer.from(JSON.stringify(tuple)).toString('base64url')
     expect(openCodeV2ModelRef('opencode-v2:' + encoded)).toEqual({ providerID: 'provider', id: 'model' })

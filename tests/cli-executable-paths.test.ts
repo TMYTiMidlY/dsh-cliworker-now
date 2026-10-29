@@ -274,6 +274,8 @@ describe('private persisted CLI executable paths', () => {
       const file = f.file(),
         target = join(f.root, 'external.json')
       writeFileSync(target, 'unrelated', { mode: 0o644 })
+      chmodSync(target, 0o644)
+      expect(statSync(target).mode & 0o777).toBe(0o644)
       rmSync(file)
       symlinkSync(target, file)
       expect(() => f.store.read('codex')).toThrow('路径记录')

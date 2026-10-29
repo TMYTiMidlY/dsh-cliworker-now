@@ -167,6 +167,10 @@ const state=()=>({sessionId:scenario==='identity'&&resumed?'changed':nativeSessi
 const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');
 const finishSteer=()=>{streaming=false;send({type:'message_end',message:{role:'assistant',provider:model.provider,model:model.id,content:[{type:'text',text:'GUIDED'}],stopReason:'stop'}});send({type:'agent_end'});if(cli==='pi')send({type:'agent_settled'})};
 if(cli==='omp')send({type:'ready'});
+// Simulated cancellation peer must stay alive through stdin EOF; only the
+// installed signal handler supplies STOPPED, not natural Node shutdown.
+if(scenario==='cancel')setInterval(()=>{},1000);
+process.on('SIGTERM',()=>setTimeout(()=>{writeFileSync(marker,'STOPPED');process.exit(143)},80));
 const input=createInterface({input:process.stdin});
 input.on('line',line=>{const cmd=JSON.parse(line);if(cmd.type==='get_state'){send({id:cmd.id,type:'response',command:cmd.type,success:true,data:state()});return}
 if(cmd.type==='clone'){nativeSessionId='fixture-fork-id';path=join(agent,'sessions','fixture-fork.jsonl');writeFileSync(path,'SIMULATED CLONED SESSION\\n',{mode:0o600});writeFileSync(join(agent,'clone-observed.json'),'clone');send({id:cmd.id,type:'response',command:'clone',success:true,data:{cancelled:false}});return}
@@ -194,6 +198,7 @@ send({type:'message_update',assistantMessageEvent:{type:'thinking_delta',content
 send({type:'message_update',assistantMessageEvent:{type:'thinking_end',contentIndex:0,content:'模拟公开过程（完成）'}});
 send({type:'message_update',assistantMessageEvent:{type:'thinking_delta',contentIndex:2,delta:'REDACTED_TEXT',partial:{content:[null,null,{redacted:true,thinkingSignature:'OPAQUE_SIGNATURE'}]}}});
 }
+if(scenario==='cancel')writeFileSync(${JSON.stringify(join(root, 'native-signal-ready'))},String(process.pid));
 for(const delta of scenario==='fragmented'?['H','E','L','L','O']:[resumed?'RESUMED':'HELLO'])send({type:'message_update',assistantMessageEvent:{type:'text_delta',delta}});
 if(scenario==='cancel'||scenario.startsWith('steer-'))return;
 if(scenario==='tool-error'){send({type:'tool_execution_start',toolCallId:'t',toolName:'write'});send({type:'tool_execution_end',toolCallId:'t',toolName:'write',isError:true,result:{content:[{type:'text',text:'denied'}]}})}
@@ -203,7 +208,6 @@ send({type:'agent_end'});if(cli==='pi'&&scenario!=='unsettled')send({type:'agent
 if(scenario==='unsettled')setTimeout(()=>process.exit(0),20);
 }});
 input.on('close',()=>{if(scenario!=='cancel')process.exit(0)});
-process.on('SIGTERM',()=>setTimeout(()=>{writeFileSync(marker,'STOPPED');process.exit(143)},80));
 }
 `,
   )
@@ -821,17 +825,22 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
         env: fixtureEnvironment(input.nativeHome, prepared.env),
         stdio: ['ignore', 'pipe', 'pipe'],
       })
-      let output = '',
-        sent = false
+      let output = '', sawHello = false
+      let hello!: () => void, earlyClose!: (error: Error) => void
+      const ready = new Promise<void>((resolve, reject) => { hello = resolve; earlyClose = reject })
+      const closed = new Promise((resolve) => child.once('close', (code) => {
+        if (!sawHello) earlyClose(new Error('Synthetic peer closed before its signal-ready handshake'))
+        resolve(code)
+      }))
       child.stdout.setEncoding('utf8')
       child.stdout.on('data', (chunk) => {
         output += chunk
-        if (!sent && output.includes('HELLO')) {
-          sent = true
-          child.kill('SIGTERM')
-        }
+        if (!sawHello && output.includes('HELLO')) { sawHello = true; hello() }
       })
-      const code = await new Promise((resolve) => child.once('close', resolve))
+      await ready
+      expect(await readFile(join(root, 'native-signal-ready'), 'utf8')).toMatch(/^\d+$/)
+      child.kill('SIGTERM')
+      const code = await closed
       expect(code).toBe(1)
       expect(await readFile(join(root, 'native-stopped'), 'utf8')).toBe('STOPPED')
       expect(JSON.parse(output.trim().split('\n').at(-1)!)).toMatchObject({ status: 'ERROR' })
@@ -1167,7 +1176,7 @@ probeRead(process.env.PI_CODING_AGENT_DIR+(${JSON.stringify(cli)}==='pi'?'/auth.
       })
       expect(JSON.parse(run.stdout.trim().split('\n').at(-1)!)).toMatchObject({ status: 'SUCCESS' })
     } finally {
-      launch.cleanup()
+      await launch.cleanup()
     }
   },
 )

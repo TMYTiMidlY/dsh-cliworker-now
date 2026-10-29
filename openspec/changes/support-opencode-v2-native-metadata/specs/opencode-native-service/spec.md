@@ -7,11 +7,19 @@
 ## ADDED Requirements
 
 ### Requirement: 原生版本分流
-系统 SHALL 在 OpenCode 账号、目录与任务准备前核验原生版本，只对明确 v1 使用旧适配；明确 v2 和未知版本 MUST 不读取 v1 凭据快照或创建 v1 隔离数据库。自动发现 SHALL 支持官方安装路径但不覆盖手动选择。
+系统 SHALL 在 OpenCode 账号、目录与任务准备前核验原生版本，只对明确 v1 使用旧适配；明确 v2 和未知版本 MUST 不读取 v1 凭据快照或创建 v1 隔离数据库。自动发现 SHALL 支持官方安装路径但不覆盖手动选择。已核实的原生 `opencode v<semver>` 完整单行 SHALL 与既有明确semver格式一样分流，仅接受已支持主版本；其他品牌、额外输出、跨行prefix、ANSI和未知版本 MUST 安全拒绝，错误诊断不得返回未知程序原始stdout/stderr载荷。
 
 #### Scenario: 原生 v2 已安装但没有旧文件
 - **WHEN** 原生版本为 2.x 且没有 auth.json
 - **THEN** 使用原生服务元数据路径，不将旧文件缺失解释为已登出
+
+#### Scenario: 官方formatter带品牌和v前缀
+- **WHEN** 已解析的原生入口在普通pipe输出完整 `opencode v2.0.31` 加末尾换行
+- **THEN** 精确识别major2、version2.0.31并继续现有v2受信服务核验；不据版本可读冒称调用成功
+
+#### Scenario: 版本输出不可信或未支持
+- **WHEN** 输出包含其他品牌、重复v、额外文本、跨行prefix、ANSI或未知major
+- **THEN** 拒绝版本确认且不回退旧认证协议；诊断只保留固定形状标签和计数，不公开原始载荷
 
 #### Scenario: 默认 PATH 未包含官方入口
 - **WHEN** 默认 PATH 查询找不到 OpenCode 且官方原生入口存在

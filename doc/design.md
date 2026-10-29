@@ -1,5 +1,13 @@
 # dsh-cliworker-now — 设计与版本演进
 
+## AGY 目录预检期限与账号一致性（2026-10-25）
+
+AGY模型目录现在显式采用60秒元数据预算，其他CLI的通用默认仍为15秒；任务timeout独立。AGY启用既有脱敏阶段诊断，caller取消与清理不确定继续优先，不能从通用Abort文字推断quota或登出。settings验证使用与目录进程/identity相同的已选HOME，避免lxy误读default。新任务原有三次预检和runtime准入后复核均保留，不新增跨请求缓存或绕过任何门禁。设计、模拟/真实验证的区别及回退见[变更记录](../openspec/changes/fix-agy-catalog-preflight/design.md)。
+
+## 显式 AGY 账号目录查询（2026-10-25）
+
+`cliworker_models` 为显式 CLI 查询增加 `agy_account=default|lxy`，解决旧父会话绑定失效时无法取得新账号模型/强度的循环。只读发现不保存选型、偏好或 Worker，不更新设置页缓存；回执明确未确认配置，后续仍经正式 start/configure_conversation 校验。隐式查询及 Worker 查询保留原绑定保护，原生查询前后的身份稳定性检查不变。详见 [OpenSpec 设计](../openspec/changes/archive/2026-10-25-query-explicit-agy-account/design.md)，上线与真实验收以验证记录为准。
+
 ## 1. 基线与范围
 
 - 本机 macOS；DeepSeek Harness 0.2.0-rc.2（官方标签 `dsh-v0.2.0-rc.2`，提交 `639ed015397290b3745d163aafe02ffee4aa3f84`）；Antigravity CLI 1.2.16。
@@ -1096,3 +1104,97 @@ OpenSpec：`openspec/changes/bridge-conversation-features/`。
 - 每轮 input 只 POST 一次，正文摘要不可变。ACK 仅准入，不是完成；丢失时按同 ID 的 inbox/user message/durable log 核对，取消后也不重发。原生 started 先于 delivery，不编造 executionID。durable log 的 log.synced 是捕获水位，过滤行允许非连续 seq；会话/aggregate/location/序号冲突拒绝。只投影最终 text/reasoning ended 并去重，不伪装实时 delta、不补造 usage。成功还需最后精确模型 step 与非空最终正文；缺失或冲突为模型结果不确定。
 - 远端清理独立于 local bridge：必须先获得 own input 正向准入，再在其后的清理周期 cancel-own/interrupt(resume=false)/同 PID wait，复核 active、inbox 和日志。没有准入证据时 native 异步准备可能晚到，cancel204/暂时 idle 不签 settled。已知准入而 terminal 发布失败可单独确认前台清理，但不冒称模型成功。Host 验证私有 HMAC（绑定 source/epoch/session/run/input/payload/水位/关键标志），不信原始 SSE/result；桥 kill、启动不确定、PID 替换、缺清理证据及任何 tool 活动均保持隔离，executed:false 不代表本地未执行。
 - cleanup-only 可在账号已改变后停止原服务/marker 的自身输入，永不生成新 prompt、不杀共享 service、不删历史。没有会话的 pre-spawn 不确定、GET404 或替换服务空闲不自动解除，属于当前保守恢复限制。仅证明受控纯文本前台，不声称任意插件/detached OS 作业停止。真实 OpenCode 服务/模型/GUI/非 Linux 仍未验收；实际 Host、官方 DSH child 与合成服务回归及隔离 build 只是源码检查点。
+
+### Agent 模型控制与逐轮结果（2026-10-24）
+
+- 新增 models/configure/configure_conversation/result 四个独立工具，复用 Host 的账号目录、Worker配置与 Runtime 准入，不另写 AGY launcher。只允许真实所属父 Agent，配置服从宿主 plan/read-only、CLI开关、账号终端、准备/运行/清理、原生child inbox、暂停队列及固定v2门禁。目录本身不证明远端权益。首次start仍完整原生模型/强度/角色问答，不能传选型model跳过。
+- Worker配置只改其preference，保留role/mode/原生conversationId，不改项目默认。conversation配置只改已完整确认的parent/project/CLI setup，保留原role、其他parent与已有Worker；缺完整setup为FIRST_SELECTION_REQUIRED。与chooseDispatch共享selection锁，异步查询/授权后再次检查source/project/policy/setup，不代答问题卡。
+- expected_model是实际配置回执的resolved configuredModel（可能有native variant后缀），不是目录分组ID，也不是选型参数。followup还可带expected_run_id；准备前、异步授权后、Runtime同步准入前检查。fresh start亦支持expected_model，保证配置后被并发改回Argon时零Worker/prompt；没有显式期望的旧调用兼容，不自动stop/clone/retry。
+- 新轮queued事件保存最小runConfiguration，终态事件保存runOutcome/cleanup；既有私有0700/0600历史保持，不迁写旧记录。result仅从目标run公开事件投影正文，配置不取当前Worker偏好，观察只取该轮native receipt，不信正文自称。AGY init mismatch保留实际观察模型再拒绝。completed但模型冲突/缺证据返回targetModelVerified=false及notice，不篡改旧终态或冒称Opus完成。
+- result只读assistant片段，严格只接受显式run-scoped SUCCESS汇总；无scope SUCCESS即便与当前片段有相同前缀也不能补尾，ERROR不回填。无stream且明确run scope的成功正文可读，缺范围证据标unknown。failed/interrupted/uncertain保留本轮实际片段与独立cleanup，不借旧lastResult、不自动重发。HMAC游标用Host私有持久随机key，绑定worker/run/水位/offset/预算/摘要，跨追加、后续run、Host重启稳定，页大小与游标有界，坏签名/错scope拒绝，buffer异常路径清零。
+- 官方child曾把working-directory来源通知当额外CLI轮次；修复只按typed provenance，在await next前捕获claimed输入，消费working-directory/runtime-context且排除后续中间件注入。真实user同文与混合输入保留；steering选择也不投递这些通知，不按正文匹配。合成官方AgentLoop验证零额外轮次，不读改真实个人会话。
+- 新回执controlApiVersion=1，包名/0.8.2不变；部署必须看bundle hash、schema和实际回执而非版本号。源码HEAD、隔离候选与旧在线c3包分开，父会话负责后续热部署/真实AGY Opus canary。本轮不运行CLI或安装，不据旧Cursor只读基线声称新控制面、GUI或其他CLI全面成熟。
+
+### MiniMax Stage1 标准托管显式配置（2026-10-24）
+
+- 修复早期 blanket apiKey/baseURL 门禁：字段存在本身不代表 API/BYOK。纯 `minimax-route.ts` 先核 token_plan、默认 minimax 与 Anthropic npm，再遵循显式 authMode 优先、原生已知托管 origin 推断 managed-login；缺省 endpoint 保留既有原生托管默认。
+- 显式 baseURL 只接受 HTTPS、无 URL 用户名/密码、解析后 origin 精确属于 agent.minimaxi.com、agent.minimax.io、agent.minimax.cn。key 只能缺省、原生缺 key 语义的空串或字面量 sk-xxx；不 trim/改写/插值 provider key，不允许显式 API/oauth、真实 key 或自定义模型/服务/headers 借旧 OAuth 准入。
+- helper 只返回安全判别，不回传 key/URL。账号模块仍走原私有有界读取、稳定主体、scope、至少一分钟有效期、config 内容摘要/文件版本和前后重检；配置合法但无当前 OAuth 仍不可派遣，托管端点 A→B→A 也不绕过来源快照。
+- 本增量不触及 AGY 控制面、原生权限/模式或其他 MiniMax 能力，不替父会话执行真实账号/模型验收、热安装或打包；最新配置层误拒与旧原生登录门禁分别记录，不推断当前认证成功。
+
+### 全局在线并发与父会话公平调度（2026-10-24）
+
+- 本节更新当前行为，前述历史默认2和设置页元数据并发2记录不改写。运行预算默认8/max12（用户明确本机先选择12，默认不变），已有Host-private concurrency.json明确选择优先plugin初始config/default。设置以policy/limit组成；no-follow、有界读取、文件/根inode与owner/mode/nlink检查，不可信记录保留服务只读诊断但阻止新增准入，不默默重置。显式setter先持久化成功再原子改内存/changed/drain；保存失败旧预算/队列/在途不变。提高立即释放可运行队列，降低允许暂态active>limit，不杀旧进程、不重新选型或重开Worker。
+- Runtime保留全局原queue顺序用于更早project写屏障；每parent仅首项成为候选，按last-served-parent轮转。任何running或前方queued同project任意accept-edits冲突仍阻止候选；不可通过公平性或提预算绕过同会话、目录串行、priority/followup代际、取消或清理隔离。parent内FIFO可能让同parent后方其他项目等待，换取明确顺序；其他parent无冲突项目可利用空槽。已在途不抢占，单parent大批队列不垄断后续释放槽。
+- cliworker_concurrency无limit只读安全aggregate，有limit明确全局写；readConcurrency/configureConcurrency与工具共享实际主Agent核心，write拒绝child/Host plan/read-only及取消。native工具桥原cliworker正则同时拒绝此工具，不递归。只公开globalActive/globalQueued/limit/source及本parent计数，不附foreign身份/任务。设置页复用NativeChoice/分区/文字/刷新控件，失败草稿标未保存，刷新计数快照不冒称实时；不修改profile/HMR/核心/原生保护。
+- 真占位包含remote recovery/admission/authorization/入口核验/harness准备/launch准备/running/cleanup有限阶段；queue给capacity、project-write-conflict或parent-turn，selected snapshot与status/标签共用。Worker queued与job running不等于已调用模型，容量是插件budget而非厂商配额或所有metadata子进程总量。新queued未落account binding只返回PENDING_ADMISSION和等待/明确cli目录建议，不提前绑账号或借其他来源；旧历史仍按原缺绑定拒绝。
+- HMAC逐run结果不改；AGY现有/新首轮Opus语义及MiniMax Stage1原生能力不变。本阶段只合成、关联typecheck/strict和唯一统一candidate2；上线/真实8槽由父会话另验，不重启或安装，不把当前在线默认2说成已8。
+
+### MiniMax 稳定身份：模型前固定原生 userinfo（2026-10-24）
+
+- 默认 native sharedAuthCore 启动尝试 userinfo，即便成功也仅存进程内 g；legacy 分支才写 verified identity 文件，失败还可保留 token 继续模型生成。故终端可用不等于磁盘缓存存在或 userinfo 必成功。当前正式目录的稳定主体错误是插件兼容缺口，不是未登录证据；不清配置/凭据或借其他账号。
+- [身份请求模块](../src/host/minimax-identity.ts) 精确镜像0.6.12 p0e的prod区域身份host、GET path/query及签名；不走模型baseURL，单次默认3秒、可取消、redirect:error、64KiB。只从原生userInfo字符串realUserID得到稳定hash；丢PII及原始错误，不运行native模块/CLI/session/prompt，也不renew/revoke/login。
+- [账号模块](../src/host/minimax-accounts.ts) 内部OwnOAuthProof绑定完整authenticated state/credential（含generation/loginEpoch/scopes/expiry/token）和root/env/region/config/选区来源指纹与stamp。subject/accountId或legacyprofile不独立授权；普通摘要纯本地且不外泄proof。正式binding及[目录](../src/host/minimax-models.ts)共用ensure，userinfo/cache/pending返回后重核，epoch以WeakMap关联projection而不进公开DTO，目录前后也核完整epoch。
+- 每来源30秒非滑动内存缓存只保存principal hash/epoch/时效，token更新即重验；pending按epoch合并，各调用者取消隔离，最后waiter离开才取消owned metadata。成功缓存只在完整后验后提交，map有界64；不落盘或伪写native cache，不长存token。401/403/原生明确身份拒绝与其他不可验证分别固定说明，均保留configured且不启动模型。
+- 十二槽并发、AGY/Cursor控制面、逐模型max effort及其余能力门禁保持。原生终端用户报告、静态合同、合成回归、隔离构建与父会话后续真实userinfo/catalog/start是不同证据，不能互相替代。
+
+### Host独立active-child容量延期准入（2026-10-24）
+
+- DSH maxActiveSubagents是Host root activation pool政策，默认8/volatile，连续managed后代共享pool；独立根各计，不能拿插件global12承诺单root可派12，也不是AGY quota。父会话已通过正规settings API明确调本机Host12是独立线上事实，本增量不读改profile/Host policy，不用private manager/pool或idle猜容量，不重启/patch Core。
+- helper只识别SDK SubagentError ACTIVATION_LIMIT_REACHED；cold RemoteError delivery-unavailable必须保留该typed cause。draining/depth/unauthorized/unknown delivery/cleanup错误不泛重试。provider.prepare在reserve前会bind/replace，bridge必须先drain和撤回暂态binding/请求，证明无真实child才能抛内部Deferred。replacement普通store.replace保护原样；internal restoreUnpublished依本进程replace捕获的完整candidate/prior快照CAS，候选被任何写触碰（同值/ABA也算）、wrong parent/worker/turn/retired/current或冷Store即拒绝，写失败不发布previous。无真实child与取消门禁由bridge和Host再次核，非capacity replacement仍保留原retired合同；这个入口不注册Remote/tool。
+- Task持有单调原队序及Deferred authority/candidate；回队保同Task/Worker/run/controller/prompt，fresh未发布child候选原ID复用，不增长retired，不保存failed/completed；释放global reservation使别root可用，保parent首项FIFO和前方project写屏障。重试前检查原Agent实例/project/权限/代际，准备通道被移除则拒绝，不绕过Host。执行timeout在第一次成功harness准入后arm，等候不耗该预算，原metadata有界检查仍在。
+- scope在首次尝试前订阅public subagent/end、settings/document-updated、loader/volatile-update，只作不含foreign payload的hint；Runtime epoch处理失败回队前事件，microtask合并drain。SDK published end在releaseSlot之后，但unpublished rollback不发end、无public capacity-ready/snapshot，故单个owned one-shot watchdog以2/4/8/16/30秒低频补偿，事件也保至少2秒失败冷却，非setInterval/tightloop。close/cancel/generation清任务及timer，scope监听随dispose；不冒称及时获知所有闲槽或旧failed已成功。
+
+### MiniMax ACP 安全阶段诊断（2026-10-24）
+
+- 仅[目录模块](../src/host/minimax-models.ts)维护固定phase/reason与不可变首错；init/state只投影bool、RPC/exit/signal固定白名单、row有界1024。错误短句附安全token，无原始wire/body/stderr/错误stack/cause/cancelreason、agent/model/label/会话标识、凭据/URL/PII/hash/私人来源路径，不增加Remote字段或持久日志。
+- 清理状态独立更新，reader/cancel/finally不覆盖首错；未知清理仍抛ProcessCleanupUnconfirmedError子类，不放行目录，也不因诊断新增对exit1的放行。正常wire/逐模型max、严格state、15秒/字节限制及旧身份/来源复核完全保持。本轮只增强诊断，不修猜测的稀疏控件/Native配置，不碰Host延期/CAS/全局预算。
+- 当前真实最新安全回执已证init/初态/4广告项通过，首个select_model返回-32603且cleanup确认；不是本次缺控件/超时/帧/退出。仍不凭内部错误码猜登录或模型不可用。
+- 对select_model且数值-32603读取Native Pg约定的data.details exact固定literal或直接structured code/key/message，输出固定native_error/envelope_kind并随首错冻结；不trim/substring/递归解析，泛VALIDATION_ERROR不推细类，未知/矛盾other。无原文/未知值/长度/hash输出，不改wire/时限/身份或接新服务。
+
+### MiniMax 已验证配置子集与精确当前值（2026-10-24）
+
+- 实机已证param_reasoning是配置value-policy拒绝，不能再把某广告tuple失败升级为整模型不可用。仅pending方法/configId/当前owned session/初始广告exact value与row全匹配、select_model数值-32603且exact param_reasoning，才局部拒绝一个配置；不写全局first/rpc/native，不吞其它错误。mixed result+error一律fatal。
+- 下一tuple前在原15秒、同进程/source创建干净owned空session，session ID不得复用，完整广告ID集合必须与初态相同，labels/次序不当authority。每tuple一次、sessions最多支持tuple N；无prompt/用户默认改写/历史删除，可能留下有界多个空会话。只发布实际确认model和该model当前effort的子集，至少一项，既有notice明确N/X/Y；来源/身份/退出/清理及任何later fatal均整份作废。
+- 专用catalog与configure按严格Native current receipt实行幂等no-op：目标先广告有效，exact current model才跳model setter；其后只用当前model effort选项，非default且exact current effort相同才跳effort setter，不复制max。fresh permissionMode=default仍必须请求并最终检查model/effort/default mode漂移。shared native-acp及其它CLI原样，真实任务验收仍由父会话随后正规执行。
+
+### MiniMax 配置同内容原子保存与来源语义（2026-10-24）
+
+- Parent实机已证config raw及语义不变、dev/size/mode/nlink/uid/gid不变而inode/mtime/ctime变。配置文件物理版本不能当稳定账号ID：source.configuration与binding route改为安全读取+既有route校验后的完整raw bytes SHA；不缩窄到已知route字段，不修改用户文件或借旧OAuth授权API。
+- 仅配置单独维护source WeakMap私有版本和每root最多64的last-config LRU。相同raw且同stamp，或相同raw、新inode及相同dev/size/mode/nlink/uid/gid的安全原子替换，继承版本并更新观测；其余触碰生成新UUID，缺失/unsafe清root记录，淘汰后只可安全拒绝。route不支持但安全可读的B也先记录，已观测A→B→A不隐去。
+- readOwn双source还比较私有版本，proof.epoch纳入配置版本，成功userinfo clone继承versionparts；原sameSnapshot授权表达式不改，版本差只公开source-configuration-version。state/credential/cache完整stamp不归一化。A恢复A的稳定binding相同，不代表跨该in-place ABA的metadata操作仍有效。
+- 无法从最终快照证明替换进程，也无法完整发现有目录写权限的对抗者未被观测的atomic A→B→A；不声称完整配置事件溯源。原inode恰被复用时按同inode触碰保守拒绝，不放宽规则。没有新增守护/文件watch/API、Native flag/补丁、OS sandbox或配置复制；真实模型与平台仍待Parent正规验收。
+
+### Agent 参数化派遣，不直接提问（2026-10-25）
+
+本节替代前述首次问题卡/新主对话沿用询问的历史设计。`cliworker_start` 接受精确 `model`、有效 `effort`、可选 `role`；选型路径不再依赖 userQuestions，不弹模型、强度、角色、沿用或Qoder版本卡。`cliworker_roles` 只读返回预设ID/name/summary，不泄露提示词正文。角色省略时复用有效完整设定，首次显式模型且无完整设定时表示无预设；none明确清空新派遣预设，不修改已有Worker快照。
+
+作用域锁、私有DispatchSetup格式和现有存储保留。缺参数先复用当前父完整设定，再用同项目同CLI完整设定；当前父失效不转用项目默认。缺模型为MODEL_REQUIRED；目录无default且多个强度无法确定时为EFFORT_REQUIRED，不猜测或打开问题卡。明确variant不能被effort重新解析成另一模型；expected_model只在最终精确目标匹配后通过，错误前不保存设定或创建job/Worker。
+
+新参数不授予额外权限：宿主plan/read-only/child、CLI开关、账户终端、实时绑定、目录、模式和最终授权继续检查。AGY当前父设定的账号路由贯穿models/configure/start；显式换路由以该次目录绑定固定最终授权，不能途中B→C。双版本Qoder歧义返回显式国际版/CN候选，不借用户确认或自动回退。原生登录和工具权限审批仍保持，不属于被移除的选型问题卡。
+
+### Cursor P0 结果可靠性源码候选（2026-10-25）
+
+依据[固定官方源码合同](../openspec/changes/fix-cursor-outcomes/source-contract.md)，只有 active 同 session、post-eventId-dedupe 的 update 进入 Cursor 本轮 tracker；Grok 的扩展 receive 和其他 ACP 默认轨不变。可选同步 prompt-response fence 用本地 JSON-RPC request ID 封口同 buffer 的终态后通知，不伪造 provider response ID，不等于 OS 清理完成。
+
+每工具继承首次 typed kind 和已核输入形状，合法省略不清除证据；execute 不等于 shell。严格独占、按 kind 允许的负向形状才判确定失败；空 error、多行 reason 合法，shell 需完整 int32 exitCode/stdout/stderr，0 只表示无可见负证据。关联冲突仅影响该工具，另一个独立确定失败仍 ERROR。错误/未知 raw 与整 update 不公开，正常成功 object 和 edit/delete diff 保留。
+
+所有可撤销终态在 prompt 收尾前暂存 UNKNOWN，避免官方工具 promise 提前消费不可撤销成功/失败；结束时才发布最终工具事件。冲突 UNKNOWN 在 Host settled 后使用已有 TOOL_OUTCOME_UNKNOWN 回执修复，不改核心枚举或重执行工具。原生 failed、权限拒绝、RPC/退出/取消/清理错误保持原硬失败；临时 UNKNOWN 不使正常 0 结果降级。source-shaped 四 action 与 Error 族文本只能标为待核实并保留完整本轮正文，同文引用无法区分来源；普通 error/JSON 不解析。Host 复用 uncertain 队列暂停与本轮 runId 正文，不借旧 lastResult 冒成功。未知 action 文本、read 无 rawOutput 与 ls timeout 丢失信息不猜回；真实负向与部署仍由父会话另验。
+
+### 全保留失败逐例台账与 AGY 汇总来源（2026-10-25–26）
+
+[本次change](../openspec/changes/fix-worker-history-repro-gaps/design.md)把原始DSH实际tool call/result及job状态与插件全部run按精确回执交叉，而非只搜错误词或看Worker最新状态。fork origin去重后仍保留来源，失败查询、未取得Worker回执、用户stop及正常权限门禁也留案例。无receipt不证明零Worker/零模型；旧记录缺配置、cleanup、exit或撤回intent时保持unknown，不改原始历史。
+
+AGY已核system_message仅为消息/上下文类型，纳入生命周期覆盖但不代表工具执行；error_message即使DONE也保留错误证据，当前wire缺少可核benign细节，不豁免。原有汇总ERROR冲突仍严格要求同Native续聊、真实exit0、本轮完成回复与无错误/未知覆盖；最多uncertain，不是success，也不证明错误必属旧轮。正常SUCCESS路径没有因此扩张为所有非tool消息的通用完整性证明。
+
+额度文案只作为CLI汇总来源：即使换模型生成新回答后重复旧quota倒计时，也不查得或推断当前余额；正文并不抹掉真实后续拒绝。错误路径独立记录process-supervisor实际退出码/信号，不把cleanup确认推为exit0。自然非0时保持失败，原生quota声明与原退出并存；真实outer transport健康错误仍优先，AGY先前错误附保留，不弱化assertHealthy或cleanup，也不改其他CLI的错误脱敏合同。历史未保存的退出证据不倒填。
+
+缺账号绑定提示共用只读生命周期分类：首次pending、现代本轮准入未完成或证据不可用、已有活动会话证据缺失、来源未知、真正旧Native历史分别说明；不触发账号发现/绑定/自动重发。原队列、readonly、foreign、模型强度和清理边界保持；真实接管或新任务必须仍经过自身来源授权。源码/合成、隔离包、实机与GUI状态分列记录，不用格式通过或局部绿测称全部案例已修。
+
+### 公开异常与目录来源诊断（2026-10-26）
+
+公开工具和Remote仅在最终错误边界投影结构化取消及未知对象，底层signal.reason身份不改；真实signal且同一reason才归取消。未知对象不String/toString/cause/getter遍历，普通Error只复制自身data message，不承诺通用message已去秘密。构造器自有WeakSet识别实际cleanup子类，清理/投递未确认优先于取消，成功回执不会因迟到取消被改成失败。不是新增自动重试或零执行承诺。
+
+Codex每次fresh native能力与account scope仍独立核验，不用显示缓存授权。Host-private sourceIdentity只绑定root/provider/已确认默认route/stable principal，不含token刷新/expiry/mtime、不公开或替换既有binding格式；来源变化在probe前拒绝，正常同principal刷新可继续。封闭reason分别说明unknown、未分类拒绝、空列表/能力无交集和已确认quota/auth。仅已清理或pre-spawn的branded Codex失败在外层复核binding；证实变化优先，重读失败保留实际绑定错误，取消/cleanup未确认不再查询。历史目录先有后无但source/scope未保留时不据当前模拟补造原因。
+
+Native流对AGY/Cursor uncertain使用CLI_RESULT_UNCERTAIN及明确SDK Failed兼容说明，仍error finish；Pinned SDK红Failed标题保留，不改Core或历史turn。本轮新原生Flash续聊与刷新现GUI已核该独立code/说明、新正文、真实exit0和cleanup，旧turn通用code不追改。部署及已验证/未定位案例继续见[实施日志](tasks.md)，不以这一次展示验收取代全部逐例或其他CLI的实际闭环。

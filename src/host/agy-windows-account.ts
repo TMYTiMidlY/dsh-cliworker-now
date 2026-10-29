@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { captureCatalogMetadata } from './adapters.ts'
+import { agyHome } from './agy-account.ts'
 import {
   accountEmail,
   localAccountIdentity,
@@ -136,7 +137,7 @@ export function nativeAgyAccountIdentity(
   config: RuntimeConfig,
   platform: NodeJS.Platform = process.platform,
 ): AccountIdentitySource {
-  if (platform !== 'win32') return localAccountIdentity()
+  if (platform !== 'win32') return localAccountIdentity({ home: agyHome(undefined, config) })
   return async (cli, signal) =>
     cli === 'antigravity' ? (await readWindowsAgyAccount(backend, config, signal)).identity : undefined
 }

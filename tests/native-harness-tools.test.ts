@@ -36,7 +36,7 @@ describe('run-isolated Harness MCP bridge (synthetic)', () => {
       expect(classifyHarnessTool(name)).toBe('unknown')
       expect(classifyHarnessTool(name, schemas)).toBe('host')
     }
-    for (const name of ['send_message', 'subagent', 'subagents.prompt', 'interrupt_agent', 'run_code', 'cliworker_create'])
+    for (const name of ['send_message', 'subagent', 'subagents.prompt', 'interrupt_agent', 'run_code', 'cliworker_create', 'cliworker_concurrency'])
       expect(classifyHarnessTool(name, [{ name }])).toBe('dispatch')
     for (const name of ['mcp__arbitrary__read', 'read_canary', 'READ']) expect(classifyHarnessTool(name, schemas)).toBe('unknown')
   })

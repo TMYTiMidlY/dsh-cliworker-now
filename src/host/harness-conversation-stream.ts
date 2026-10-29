@@ -209,7 +209,9 @@ export class HarnessConversationStream {
         reason: { kind: 'aborted', failure: { code: 'ABORTED', message: 'CLI 运行已停止' } },
       }
     }
-    const failure = { code: 'CLI_RUN_FAILED', message: outcome.error || 'CLI 运行未成功完成' }
+    const failure = outcome.status === 'uncertain'
+      ? { code: 'CLI_RESULT_UNCERTAIN', message: `结果待核实：当前 SDK 原生对话可能以 Failed 兼容显示，不代表业务失败已证或任务成功。请先核对本轮正文与产物，不要自动重试。${outcome.error ? ` 原始详情：${outcome.error}` : ''}` }
+      : { code: 'CLI_RUN_FAILED', message: outcome.error || 'CLI 运行未成功完成' }
     return {
       type: 'finish',
       reason: { kind: 'error', failure },

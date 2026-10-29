@@ -1,9 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { AgentRegistry } from '@deepseek-ai/dsh-agent'
-import { LlmRuntime } from '@deepseek-ai/dsh-llm'
+import { LlmRuntime, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionStore, SessionId } from '@deepseek-ai/dsh-session'
-import { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
+import { SubagentRuntime, SubagentError } from '@deepseek-ai/dsh-subagent'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { ToolRuntime, defineTool } from '@deepseek-ai/dsh-tools'
 import { SandboxPolicyService, setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
@@ -86,7 +87,7 @@ function deferred<T = void>() {
   return { promise, resolve }
 }
 
-it('runs real native child submissions through CLI once and preserves owned cleanup and recovery', async () => {
+async function integrationFixture(hostLimit = 8, pluginLimit = 1, holdFirst = true) {
   const [{ default: AgentLoop }, { default: Projections }, { default: Persistence }, { default: Query }] =
     await Promise.all([
       loadRuntime('@deepseek-ai/dsh-agent-loop'),
@@ -99,7 +100,7 @@ it('runs real native child submissions through CLI once and preserves owned clea
   writeFileSync(executable, '// Synthetic entry; process I/O is simulated by the backend below.\n')
   const ctx = new Context()
   const releaseFirst = deferred()
-  leases.gates.push(releaseFirst.promise)
+  if (holdFirst) leases.gates.push(releaseFirst.promise)
   cleanup.push(async () => {
     releaseFirst.resolve()
     await ctx.fiber.dispose()
@@ -125,7 +126,7 @@ it('runs real native child submissions through CLI once and preserves owned clea
     await ctx.plugin(LocalFs)
     await ctx.plugin(WorkingDirectory)
   }
-  await ctx.plugin(SubagentRuntime, { maxDepth: 4, maxActiveSubagents: 8 })
+  await ctx.plugin(SubagentRuntime, { maxDepth: 4, maxActiveSubagents: hostLimit })
   const calls: any[] = []
   const jobRuns: any[] = []
   ctx.provide('jobs', {
@@ -192,11 +193,185 @@ it('runs real native child submissions through CLI once and preserves owned clea
   })
   await ctx.plugin(CliWorkerService, {
     stateDirectory: join(directory, 'workers'),
-    maxConcurrent: 1,
+    maxConcurrent: pluginLimit,
     graceMs: 100,
   })
   const service = ctx.cliworker as any
   await vi.waitFor(() => expect(service.harnessConversation).toBeDefined())
+  return { ctx, service, directory, executable, parent, releaseFirst, calls, jobRuns }
+}
+
+const syntheticPreference = { cli: 'opencode', model: 'saved-model', effort: 'default' }
+async function launchCapacity(f: Awaited<ReturnType<typeof integrationFixture>>, prompt: string, parent = f.parent.agent, worker?: Worker) {
+  return JSON.parse(await f.service.launch(parent, 'Synthetic capacity task', prompt, syntheticPreference,
+    'plan', worker?.id, undefined, new AbortController().signal))
+}
+async function occupyingProvider(f: Awaited<ReturnType<typeof integrationFixture>>) {
+  const terminal = deferred<any>()
+  const remove = f.ctx.subagents.registerProvider({ name: 'synthetic-capacity-other',
+    capabilities: { agentOptions: false, outputSchema: false, depthLimit: false },
+    start: async () => ({ id: SessionId(randomUUID()), result: terminal.promise,
+      dispose: async () => { terminal.resolve({ output: [], stopReason: 'aborted' }) } }),
+  } as any)
+  const active = await f.ctx.subagents.startActivation({ provider: 'synthetic-capacity-other', delivery: 'caller',
+    request: { parent: f.parent.agent, prompt: [{ type: 'text', text: 'synthetic slot only' }] }, signal: new AbortController().signal })
+  cleanup.push(async () => { terminal.resolve({ output: [], stopReason: 'completed' }); await active.dispose(); remove() })
+  return { active, release: () => terminal.resolve({ output: [], stopReason: 'completed' }) }
+}
+it('SDK Host1/plugin12 preserves the same fresh Task/run/candidate, rolls back bind and lets an independent root run', async () => {
+  const f = await integrationFixture(1, 12), starts = vi.spyOn(f.ctx.subagents, 'startActivation')
+  await launchCapacity(f, 'first-capacity')
+  await vi.waitFor(() => expect(leases.closes[0]).toHaveBeenCalled())
+  const queued = await launchCapacity(f, 'waiting-capacity'), worker = f.service.runtime.get(f.parent.agent.id, queued.workerId), run = worker.runId
+  await vi.waitFor(() => expect(f.service.runtime.scheduling(worker)?.reason).toBe('host-child-capacity'))
+  const candidate = starts.mock.calls.at(-1)![0].childId!
+  expect(worker.harnessConversation).toBeUndefined(); expect(f.ctx.agents.get(candidate)).toBeUndefined()
+  expect(f.calls).toHaveLength(1)
+  expect(f.service.runtime.concurrencySnapshot(f.parent.agent.id)).toMatchObject({ limit: 12, globalActive: 1, globalQueued: 1 })
+  const other = await f.ctx.agents.create({ sessionId: SessionId(randomUUID()), meta: { cwd: f.directory }, agentOptions: { provider: 'unavailable-real-provider', model: 'must-not-call' } })
+  await launchCapacity(f, 'independent-root', other.agent)
+  await vi.waitFor(() => expect(f.calls).toHaveLength(2))
+  expect(worker.status).toBe('queued'); expect(worker.runId).toBe(run)
+  f.releaseFirst.resolve()
+  await vi.waitFor(() => expect(worker.status).toBe('completed'), { timeout: 5_000 })
+  expect(worker.runId).toBe(run); expect(worker.harnessConversation?.sessionId).toBe(candidate)
+  expect(f.calls.filter(call => call.request.prompt === 'waiting-capacity')).toHaveLength(1)
+  expect(f.service.runtime.storage.history(worker.id).filter((event: any) => event.kind === 'user')).toHaveLength(1)
+  expect(f.service.runtime.storage.history(worker.id).filter((event: any) => event.runOutcome)).toHaveLength(1)
+})
+it('SDK Host2 includes another provider and defers without changing either Host policy or global12', async () => {
+  const f = await integrationFixture(2, 12), other = await occupyingProvider(f)
+  await launchCapacity(f, 'held-native')
+  await vi.waitFor(() => expect(leases.closes[0]).toHaveBeenCalled())
+  const receipt = await launchCapacity(f, 'same-root-after-other'), worker = f.service.runtime.get(f.parent.agent.id, receipt.workerId), run = worker.runId
+  await vi.waitFor(() => expect(f.service.runtime.scheduling(worker)?.reason).toBe('host-child-capacity'))
+  expect(f.calls).toHaveLength(1); expect(worker.harnessConversation).toBeUndefined()
+  other.release(); await other.active.result
+  await vi.waitFor(() => expect(worker.status).toBe('completed'), { timeout: 5_000 })
+  expect(worker.runId).toBe(run); expect(f.calls.filter(call => call.request.prompt === 'same-root-after-other')).toHaveLength(1)
+  expect(f.service.runtime.concurrencySnapshot(f.parent.agent.id).limit).toBe(12)
+})
+it('SDK cold resume only defers preserved typed capacity and retains its durable binding and new run', async () => {
+  const f = await integrationFixture(1, 12, false), receipt = await launchCapacity(f, 'cold-seed')
+  const worker = f.service.runtime.get(f.parent.agent.id, receipt.workerId)
+  await vi.waitFor(() => expect(worker.status).toBe('completed'))
+  const binding = structuredClone(worker.harnessConversation)
+  await vi.waitFor(() => expect(f.ctx.agents.get(SessionId(binding.sessionId))).toBeUndefined())
+  const other = await occupyingProvider(f)
+  await launchCapacity(f, 'cold-after-slot', f.parent.agent, worker); const run = worker.runId
+  await vi.waitFor(() => expect(f.service.runtime.scheduling(worker)?.reason).toBe('host-child-capacity'))
+  expect(worker.harnessConversation.sessionId).toBe(binding.sessionId); expect(f.calls).toHaveLength(1)
+  other.release(); await other.active.result
+  await vi.waitFor(() => expect(worker.status).toBe('completed'), { timeout: 5_000 })
+  expect(worker.runId).toBe(run); expect(worker.harnessConversation.sessionId).toBe(binding.sessionId)
+  expect(f.calls.filter(call => call.request.prompt === 'cold-after-slot')).toHaveLength(1)
+})
+it('SDK unpublished provider startup rollback emits no end; one-shot watchdog still admits the original queued run', async () => {
+  const f = await integrationFixture(1, 12, false), entered = deferred(), fail = deferred()
+  f.ctx.subagents.registerProvider({ name: 'synthetic-unpublished-capacity',
+    capabilities: { agentOptions: false, outputSchema: false, depthLimit: false },
+    start: async () => { entered.resolve(); await fail.promise; throw new Error('synthetic unpublished rollback') },
+  } as any)
+  let ends = 0; f.ctx.on('subagent/end', () => { ends++ })
+  const starting = f.ctx.subagents.startActivation({ provider: 'synthetic-unpublished-capacity', delivery: 'caller',
+    request: { parent: f.parent.agent, prompt: [{ type: 'text', text: 'synthetic no-model startup' }] }, signal: new AbortController().signal })
+  const failed = starting.catch(error => error)
+  cleanup.push(async () => { fail.resolve(); await failed })
+  await entered.promise
+  const receipt = await launchCapacity(f, 'after-unpublished-rollback'), worker = f.service.runtime.get(f.parent.agent.id, receipt.workerId), run = worker.runId
+  await vi.waitFor(() => expect(f.service.runtime.scheduling(worker)?.reason).toBe('host-child-capacity'))
+  expect(worker.harnessConversation).toBeUndefined(); expect(f.calls).toHaveLength(0)
+  fail.resolve(); expect(await failed).toBeInstanceOf(Error); expect(ends).toBe(0)
+  await vi.waitFor(() => expect(worker.status).toBe('completed'), { timeout: 5_000 })
+  expect(worker.runId).toBe(run); expect(f.calls.filter(call => call.request.prompt === 'after-unpublished-rollback')).toHaveLength(1)
+})
+it('capacity during safe replacement restores the original binding without adding a retired child', async () => {
+  const f = await integrationFixture(1, 12, false), receipt = await launchCapacity(f, 'seed-replacement')
+  const worker = f.service.runtime.get(f.parent.agent.id, receipt.workerId)
+  await vi.waitFor(() => expect(worker.status).toBe('completed'))
+  const binding = structuredClone(worker.harnessConversation)
+  await vi.waitFor(() => expect(f.ctx.agents.get(SessionId(binding.sessionId))).toBeUndefined())
+  const other = await occupyingProvider(f)
+  vi.spyOn(f.ctx.subagents, 'prompt').mockRejectedValueOnce(new RemoteError('subagent/not-resumable', 'synthetic unavailable old child', {}))
+  await launchCapacity(f, 'replacement-waits', f.parent.agent, worker)
+  await vi.waitFor(() => expect(f.service.runtime.scheduling(worker)?.reason, worker.error).toBe('host-child-capacity'))
+  expect(worker.harnessConversation).toEqual(binding); expect(f.calls).toHaveLength(1)
+  await f.service.runtime.stop(f.parent.agent.id, worker.id)
+  other.release(); await other.active.result
+  expect(worker.harnessConversation).toEqual(binding); expect(worker.status).toBe('interrupted')
+})
+it('mixed replacement-cap then cold-cap then replacement-admit retains the original candidate and run with one native prompt', async () => {
+  const f = await integrationFixture(1, 12, false), receipt = await launchCapacity(f, 'mixed-seed')
+  const worker = f.service.runtime.get(f.parent.agent.id, receipt.workerId)
+  await vi.waitFor(() => expect(worker.status).toBe('completed'))
+  const binding = structuredClone(worker.harnessConversation)
+  await vi.waitFor(() => expect(f.ctx.agents.get(SessionId(binding.sessionId))).toBeUndefined())
+  const other = await occupyingProvider(f), starts = vi.spyOn(f.ctx.subagents, 'startActivation')
+  const actualPrompt = f.ctx.subagents.prompt.bind(f.ctx.subagents)
+  let promptAttempts = 0
+  vi.spyOn(f.ctx.subagents, 'prompt').mockImplementation(async (...args: any[]) => {
+    promptAttempts++
+    if (promptAttempts === 1 || promptAttempts === 3)
+      throw new RemoteError('subagent/not-resumable', 'synthetic old child unavailable for this attempt', {})
+    return actualPrompt(...args as Parameters<typeof actualPrompt>)
+  })
+  await launchCapacity(f, 'mixed-final-once', f.parent.agent, worker); const run = worker.runId
+  await vi.waitFor(() => expect(f.service.runtime.scheduling(worker)?.reason).toBe('host-child-capacity'))
+  const candidate = starts.mock.calls[0]![0].childId!
+  expect(worker.harnessConversation).toEqual(binding); expect(f.ctx.agents.get(candidate)).toBeUndefined()
+  await vi.waitFor(() => {
+    expect(promptAttempts).toBe(2)
+    expect(f.service.runtime.scheduling(worker)?.reason).toBe('host-child-capacity')
+  }, { timeout: 5_000 })
+  expect(starts).toHaveBeenCalledTimes(1); expect(worker.runId).toBe(run); expect(f.calls).toHaveLength(1)
+  expect(worker.harnessConversation).toEqual(binding)
+  other.release(); await other.active.result
+  await vi.waitFor(() => expect(worker.status).toBe('completed'), { timeout: 5_000 })
+  expect(starts).toHaveBeenCalledTimes(2)
+  expect(starts.mock.calls[1]![0].childId).toBe(candidate)
+  expect(worker.harnessConversation.sessionId).toBe(candidate); expect(worker.runId).toBe(run)
+  expect(f.calls.filter(call => call.request.prompt === 'mixed-final-once')).toHaveLength(1)
+  expect(f.service.runtime.storage.history(worker.id).filter((event: any) => event.runId === run && event.kind === 'user')).toHaveLength(1)
+}, 10_000)
+it('a typed capacity error with an existing real Agent is never converted to a retryable unpublished candidate', async () => {
+  const f = await integrationFixture(1, 12, false)
+  const starts = vi.spyOn(f.ctx.subagents, 'startActivation').mockImplementationOnce(async (spec: any) => {
+    await f.ctx.agents.create({ sessionId: spec.childId, meta: { cwd: f.directory, origin: 'subagent', parentSession: f.parent.agent.id },
+      agentOptions: { provider: 'unavailable-real-provider', model: 'must-not-call' } })
+    throw new SubagentError('synthetic ambiguous existing child', 'ACTIVATION_LIMIT_REACHED')
+  })
+  const receipt = await launchCapacity(f, 'must-not-duplicate-child'), worker = f.service.runtime.get(f.parent.agent.id, receipt.workerId)
+  await vi.waitFor(() => expect(worker.status).toBe('failed'))
+  f.service.runtime.wakeHostAdmission()
+  expect(f.service.runtime.scheduling(worker)).toBeUndefined(); expect(starts).toHaveBeenCalledTimes(1); expect(f.calls).toHaveLength(0)
+})
+it('unknown cold delivery-unavailable is not retried or misclassified as capacity', async () => {
+  const f = await integrationFixture(1, 12, false), receipt = await launchCapacity(f, 'seed-unknown')
+  const worker = f.service.runtime.get(f.parent.agent.id, receipt.workerId)
+  await vi.waitFor(() => expect(worker.status).toBe('completed'))
+  await vi.waitFor(() => expect(f.ctx.agents.get(SessionId(worker.harnessConversation.sessionId))).toBeUndefined())
+  const prompt = vi.spyOn(f.ctx.subagents, 'prompt').mockRejectedValueOnce(new RemoteError('subagent/delivery-unavailable', 'synthetic unknown admission', {}))
+  await launchCapacity(f, 'must-not-run', f.parent.agent, worker)
+  await vi.waitFor(() => expect(worker.status).toBe('failed'))
+  f.service.runtime.wakeHostAdmission()
+  expect(prompt).toHaveBeenCalledTimes(1); expect(f.calls).toHaveLength(1)
+  expect(f.service.runtime.scheduling(worker)).toBeUndefined()
+})
+it('SDK wait cancellation cleans the rolled-back candidate and late end cannot resurrect its Task', async () => {
+  const f = await integrationFixture(1, 12), other = await occupyingProvider(f), starts = vi.spyOn(f.ctx.subagents, 'startActivation')
+  const receipt = await launchCapacity(f, 'cancel-before-native'), worker = f.service.runtime.get(f.parent.agent.id, receipt.workerId)
+  await vi.waitFor(() => expect(f.service.runtime.scheduling(worker)?.reason).toBe('host-child-capacity'))
+  const candidate = starts.mock.calls.at(-1)![0].childId!
+  await f.service.runtime.stop(f.parent.agent.id, worker.id)
+  expect(worker.status).toBe('interrupted'); expect(worker.harnessConversation).toBeUndefined()
+  expect(f.ctx.agents.get(candidate)).toBeUndefined(); expect(f.calls).toHaveLength(0)
+  const attempts = starts.mock.calls.length
+  other.release(); await other.active.result; f.service.runtime.wakeHostAdmission()
+  await new Promise(resolve => setTimeout(resolve, 2_050))
+  expect(starts).toHaveBeenCalledTimes(attempts); expect(f.calls).toHaveLength(0)
+})
+it('runs real native child submissions through CLI once and preserves owned cleanup and recovery', async () => {
+  const { ctx, service, directory, executable, parent, releaseFirst, calls, jobRuns } = await integrationFixture()
   const receipt = JSON.parse(
     await service.launch(
       parent.agent,
@@ -483,4 +658,45 @@ it('runs real native child submissions through CLI once and preserves owned clea
     ),
   ).rejects.toThrow('只读权限')
   expect(calls).toHaveLength(6)
+
+  // Actual official AgentLoop provenance regression. Runtime context is not a
+  // user's new CLI task, including messages claimed before downstream hooks.
+  setSandboxMode(parent.agent.session, 'workspace-write')
+  const live = service.runtime.get(parent.agent.id, planWorker.id)
+  // Prior public maintenance may have drained inactive children. Activate using
+  // one genuine public submission, never a fabricated AgentRegistry instance.
+  await ctx.subagents.prompt({ requestId: randomUUID() as never, parentSessionId: parent.agent.id,
+    childSessionId: SessionId(live.harnessConversation.sessionId), mode: 'continuable', delivery: 'queue',
+    content: [{ type: 'text', text: 'SYNTHETIC_ACTIVATE_PROVENANCE_CHECK' }] }, new AbortController().signal)
+  const display = ctx.agents.get(SessionId(live.harnessConversation.sessionId))!
+  await display.whenIdle()
+  const baselineCalls = calls.length
+  const wdText = 'The working directory changed from "synthetic-old" to "synthetic-new".'
+  const unchangedRun = live.runId, unchangedJobs = jobRuns.length
+  const removeContext = ctx.on('agent/pre-step', async (payload, next) => {
+    if (payload.agent.id === display.id)
+      payload.messages.push(createUserMessage({ source: { kind: 'runtime-context', form: 'notice', sections: [] }, content: [{ type: 'text', text: 'SYNTHETIC_MIDDLEWARE_INSTRUCTION_MUST_NOT_BE_SENT' }] } as any))
+    return next()
+  }, { global: true })
+  try {
+    for (const kind of ['working-directory', 'runtime-context']) {
+      display.send(createUserMessage({ source: { kind }, content: [{ type: 'text', text: wdText }] } as any), 'next-step', true)
+      await display.whenIdle()
+      await vi.waitFor(() => { expect(display.inbox.nextStep).toHaveLength(0); expect(display.status).toBe('idle') })
+      expect(calls).toHaveLength(baselineCalls); expect(jobRuns).toHaveLength(unchangedJobs)
+      expect(service.runtime.get(parent.agent.id, live.id).runId).toBe(unchangedRun)
+    }
+    // Same text is a real request when source=user; no body matching/blanket rejection.
+    display.send(createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: wdText }] }), 'next-step', true)
+    await display.whenIdle()
+    await vi.waitFor(() => expect(calls).toHaveLength(baselineCalls + 1))
+    expect(calls[baselineCalls].request.prompt).toBe(wdText)
+    // Mixed preclaimed context and user input retains only the genuine submission.
+    display.send(createUserMessage({ source: { kind: 'working-directory' }, content: [{ type: 'text', text: wdText }] } as any), 'next-step', false)
+    display.send(createUserMessage({ source: { kind: 'user', rpcId: randomUUID() }, content: [{ type: 'text', text: 'SYNTHETIC_GENUINE_MIXED_INPUT' }] } as any), 'next-step', true)
+    await display.whenIdle()
+    await vi.waitFor(() => expect(calls).toHaveLength(baselineCalls + 2))
+    expect(calls[baselineCalls + 1].request.prompt).toBe('SYNTHETIC_GENUINE_MIXED_INPUT')
+    expect(calls.slice(baselineCalls).every(call => !call.request.prompt.includes('MIDDLEWARE_INSTRUCTION'))).toBe(true)
+  } finally { removeContext() }
 })

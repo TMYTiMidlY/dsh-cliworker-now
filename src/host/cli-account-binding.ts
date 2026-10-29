@@ -16,6 +16,8 @@ import { captureCatalogMetadata, resolveCliExecutable } from './adapters.ts'
 import { readCodexAccount } from './codex-account.ts'
 import { assertAgyNativeAccountRoute } from './agy-models.ts'
 import { agyAccountPath } from './agy-account-path.ts'
+import { agyHome } from './agy-account.ts'
+import { accountEmail } from './account-identity.ts'
 import { readWindowsAgyAccount } from './agy-windows-account.ts'
 import { readFirstPartyModelSources, type FirstPartyModelSource } from './first-party-models.ts'
 import { KimiOAuthModelError } from './kimi-oauth-models.ts'
@@ -31,8 +33,9 @@ import { readZCodeBindingMaterial, zcodeAuthDirectory } from './zcode-adapter.ts
 import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
 import { ensureHermesNousFresh, HermesRenewalError } from './hermes-renewal.ts'
 import { readQoderAccountBindingMaterial, QoderAccountError } from './qoder-accounts.ts'
-import { readCursorBindingMaterial, CursorAccountError } from './cursor-accounts.ts'
+import { readCursorBindingMaterial, resolveCursorBindingExecutable, CursorAccountError, CursorMetadataError } from './cursor-accounts.ts'
 import { readMiniMaxBindingMaterial, MiniMaxAccountError } from './minimax-accounts.ts'
+import { assertMiniMaxIdentityActive } from './minimax-identity.ts'
 import { readOpenCodeVersion, readOpenCodeV2Metadata, OpenCodeCompatibilityError } from './opencode-v2.ts'
 
 const object = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -252,6 +255,8 @@ export async function readCodexOwnAccountSource(project: string, signal: AbortSi
       sourceIds: [root],
       baseUrl: 'https://api.openai.com/v1',
       nativeRouteConfirmed: true as const,
+      // Private stable route/principal label; not token freshness or entitlement.
+      sourceIdentity: hash(stable({ root, provider: 'openai', baseUrl: 'https://api.openai.com/v1', principal: { kind: 'api', key: hash(auth.OPENAI_API_KEY) } })),
     }
   if (object(auth.tokens) && (!auth.auth_mode || auth.auth_mode === 'chatgpt')) {
     const credential = {
@@ -263,13 +268,15 @@ export async function readCodexOwnAccountSource(project: string, signal: AbortSi
       expires:
         expiry(auth.tokens.expires ?? auth.tokens.expires_at) ?? expiry(claims(auth.tokens.access_token).exp),
     }
-    if (oauthPrincipal(credential))
+    const principal = oauthPrincipal(credential)
+    if (principal)
       return {
         provider: 'openai-codex',
         credential,
         sourceIds: [root],
         baseUrl: 'https://chatgpt.com/backend-api',
         nativeRouteConfirmed: true as const,
+        sourceIdentity: hash(stable({ root, provider: 'openai-codex', baseUrl: 'https://chatgpt.com/backend-api', principal })),
       }
   }
   throw new CliAccountBindingError('codex')
@@ -304,10 +311,10 @@ async function material(
 ): Promise<BindingMaterial> {
   if (selectedKimiSources !== undefined && cli !== 'kimi') throw new CliAccountBindingError(cli)
   if (cli === 'kimi') assertKimiEnvironment()
-  const home = homedir()
+  const home = cli === 'antigravity' ? agyHome(undefined, config) : homedir()
   if (cli === 'minimax') return readMiniMaxBindingMaterial(config, signal)
   if (cli === 'cursor') return readCursorBindingMaterial(backend, config,
-    await resolveCliExecutable(cli, backend, config, signal), project, signal)
+    await resolveCursorBindingExecutable(backend, config, signal), project, signal)
   if ((cli === 'qoder' || cli === 'qodercn')) {
     const executable = await resolveCliExecutable(cli, backend, config, signal)
     return readQoderAccountBindingMaterial(executable, signal, { cli, backend, config, project })
@@ -329,7 +336,10 @@ async function material(
     const auth = await document(path, signal)
     const principal =
       auth.auth_method === 'consumer' && object(auth.token)
-        ? oauthPrincipal({ ...auth.token, id_token: auth.id_token })
+        ? (oauthPrincipal({ ...auth.token, id_token: auth.id_token ?? auth.token.id_token }) ??
+          // Current native AGY persists the email, not the ID-token JWT, after login.
+          // It labels this same consumer credential; it is not proof of entitlement.
+          oauthPrincipal({ ...auth.token, email: accountEmail(auth.id_token_email) }))
         : undefined
     return { sourceIds: [root], entries: principal ? [{ provider: 'antigravity', principal }] : [] }
   }
@@ -598,10 +608,11 @@ export async function readCliAccountBinding(
   /** Private preparation snapshot only, never accepted from Gateway/tool input. */
   selectedKimiSources?: readonly FirstPartyModelSource[],
 ): Promise<string> {
-  signal.throwIfAborted()
+  const checkCancellation = () => cli === 'minimax' ? assertMiniMaxIdentityActive(signal) : signal.throwIfAborted()
+  checkCancellation()
   try {
     const value = await material(cli, backend, config, project, signal, selectedClaudeRoute, selectedKimiSources)
-    signal.throwIfAborted()
+    checkCancellation()
     if (!value.entries.length || !value.sourceIds.length) throw new CliAccountBindingError(cli)
     const sources = [
       ...new Set(value.sourceIds.map((path) => (isAbsolute(path) ? resolve(path) : path))),
@@ -610,13 +621,13 @@ export async function readCliAccountBinding(
     return `cli-account-v1:${hash(stable({ cli, sources, entries }))}`
   } catch (error) {
     if (error instanceof ProcessCleanupUnconfirmedError) throw error
-    signal.throwIfAborted()
+    checkCancellation()
     if (
       error instanceof CliAccountBindingError ||
       error instanceof KimiOAuthModelError || error instanceof KimiCredentialConfigurationError ||
       error instanceof ClaudeOwnRouteError ||
       error instanceof HermesRenewalError
-      || error instanceof QoderAccountError || error instanceof CursorAccountError || error instanceof MiniMaxAccountError || error instanceof OpenCodeCompatibilityError
+      || error instanceof QoderAccountError || error instanceof CursorAccountError || (cli === 'cursor' && error instanceof CursorMetadataError) || error instanceof MiniMaxAccountError || error instanceof OpenCodeCompatibilityError
     )
       throw error
     throw new CliAccountBindingError(cli)

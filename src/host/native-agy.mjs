@@ -34,8 +34,10 @@ export async function runNativeAgy(config, io) {
   const unsubscribe = peer.onMessage((value) => {
     if (!object(value) || !string(value.event)) throw fail('无效的原生事件')
     if (result) throw fail('原生终态后仍有事件')
-    if (value.event === 'init' && (!string(value.init?.model) || value.init.model !== config.preference.model))
+    if (value.event === 'init' && (!string(value.init?.model) || value.init.model !== config.preference.model)) {
+      if (string(value.init?.model)) io.event({ kind: 'status', text: 'Antigravity 原生初始化模型不匹配', observedModel: value.init.model })
       throw fail('原生初始化模型与明确选型不一致')
+    }
     identify(value.conversation_id, value.init?.model)
     if ((value.error !== undefined && value.error !== null && value.error !== '' && value.error !== false) || value.is_error === true) { invalidStep = true; failedStep = true }
     if (value.event === 'init') {
@@ -46,7 +48,11 @@ export async function runNativeAgy(config, io) {
       identify(item.conversation_id)
       const index = typeof item.step_index === 'number' ? item.step_index : undefined
       const state = typeof item.state === 'string' ? item.state : undefined
-      const knownType = ['user_input', 'agent_response', 'tool', 'checkpoint'].includes(item.step_type)
+      // Native message/context steps are not tools. Their lifecycle still
+      // participates in coverage; an error record is not harmless just because
+      // displaying/processing that record reached DONE. The stream carries no
+      // verified benign-error detail with which to waive that evidence.
+      const knownType = ['user_input', 'agent_response', 'tool', 'checkpoint', 'system_message', 'error_message'].includes(item.step_type)
       let invalidItem = false
       if (!Number.isSafeInteger(index) || index < 0) invalidItem = true
       else if (knownType) {
@@ -62,7 +68,8 @@ export async function runNativeAgy(config, io) {
       }
       const toolError = item.step_type === 'tool' && object(item.tool_info) &&
         item.tool_info.error !== undefined && item.tool_info.error !== null && item.tool_info.error !== '' && item.tool_info.error !== false
-      if ((state && !['PENDING', 'QUEUED', 'ACTIVE', 'RUNNING', 'IN_PROGRESS', 'DONE'].includes(state)) ||
+      if (item.step_type === 'error_message' ||
+        (state && !['PENDING', 'QUEUED', 'ACTIVE', 'RUNNING', 'IN_PROGRESS', 'DONE'].includes(state)) ||
         (item.state !== undefined && typeof item.state !== 'string') ||
         (item.text_delta !== undefined && typeof item.text_delta !== 'string') ||
         (item.error !== undefined && item.error !== null && item.error !== '' && item.error !== false) || item.is_error === true || toolError) invalidItem = true
@@ -115,10 +122,21 @@ export async function runNativeAgy(config, io) {
     const unfinishedTool = [...steps.values()].some((item) => item.type === 'tool' && item.state !== 'DONE')
     const allDone = !invalidStep && steps.size > 0 && [...steps.values()].every((item) => item.state === 'DONE') && [...responses].some(([index, text]) => index !== undefined && steps.get(index)?.state === 'DONE' && text.trim()) && (result.error === undefined || typeof result.error === 'string')
     const conflict = outcome.exitCode === 0 && config.conversationId && sessionId === config.conversationId && result.status === 'ERROR' && allDone
+    const nativeError = typeof result.error === 'string' && result.error ? result.error : undefined
+    const quotaNote = nativeError && /quota|credits?\b|额度|余额/i.test(nativeError)
+      ? '（CLI 会话汇总的额度提示；并非当前模型余额查询，不能据此否认已保留的本轮结果）' : ''
+    if (conflict || outcome.exitCode !== 0 || result.status !== 'SUCCESS' || failedStep || unfinishedTool)
+      io.event({ kind: 'diagnostic', text: 'Antigravity 原生进程退出证据', detail: JSON.stringify({
+        source: 'process-supervisor', exitCode: Number.isSafeInteger(outcome.exitCode) ? outcome.exitCode : null,
+        signal: typeof outcome.signal === 'string' ? outcome.signal.slice(0, 64) : null,
+      }) })
     if (conflict) {
-      io.result('UNCERTAIN', observed, `CLI 汇总状态冲突，结果待核实：本轮回复及已观察步骤均为 DONE，但 CLI 最终报告 ERROR。请核查本轮输出和实际产物，不要自动重试。原始汇总错误：${result.error || '未提供错误详情'}`, 'run')
+      io.result('UNCERTAIN', observed, `CLI 汇总状态冲突，结果待核实：本轮回复及已观察步骤均为 DONE，但 CLI 最终报告 ERROR。请核查本轮输出和实际产物，不要自动重试。原始汇总错误：${nativeError || '未提供错误详情'}${quotaNote}`, 'run')
     } else if (outcome.exitCode !== 0 || result.status !== 'SUCCESS' || failedStep || unfinishedTool) {
-      io.result('ERROR', observed, outcome.exitCode !== 0 ? 'Antigravity 原生进程非零退出' : typeof result.error === 'string' && result.error ? result.error : `Antigravity 原生结果 ${result.status}${failedStep || unfinishedTool ? '，且步骤未全部确认' : ''}`, 'run')
+      const error = outcome.exitCode !== 0
+        ? `Antigravity 原生进程未成功退出（exitCode=${Number.isSafeInteger(outcome.exitCode) ? outcome.exitCode : 'unknown'}）${nativeError ? `；CLI 汇总错误：${nativeError}` : ''}`
+        : nativeError || `Antigravity 原生结果 ${result.status}${failedStep || unfinishedTool ? '，且步骤未全部确认' : ''}`
+      io.result('ERROR', observed, `${error}${quotaNote}`, 'run')
     } else io.result('SUCCESS', result.response, undefined, 'run')
   } finally {
     io.signal?.removeEventListener('abort', abort)

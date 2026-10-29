@@ -14,6 +14,36 @@
 - 暂不开放 Plan、附件、工具/MCP 注入、fork 或实时 steer。原生 Plan 具有 next_prompt 延迟转移，不能套用通用立即确认规则；不使用 auto/bypassPermissions。非预期文件、终端、权限和问题请求全部拒绝。
 - 登录失败、身份无法确认和插件尚不支持分别说明；首阶段仅开放标准 token_plan / ACP minimax provider，API/custom来源及提供商/模型级认证、服务或请求头覆盖拒绝，当前配置摘要和文件版本纳入账号绑定；保留明确失败门禁，不为完成接入而虚构已登录、可用模型、统计或成功结果。
 
+## Stage 1 Follow-up（2026-10-24）
+
+父会话最新正式派遣在配置层被拒绝，尚未进入本次 OAuth 校验，不是已证明的登录失败。安全投影显示当前是原生默认 token_plan、minimax 提供商与 Anthropic npm，options 仅有原生占位 `sk-xxx` 和 HTTPS、无 URL 用户凭据、origin 属于原生托管集合的 baseURL。现有“出现 apiKey/baseURL 即拒绝”误伤该标准配置。
+
+本增量仅增加纯有效路由判别：先按显式 authMode 决定，再按已知托管 origin 推断，结合 token_plan、默认提供商及 npm 核对；接受原生托管显式 endpoint 和占位 key，不把占位当身份。真实 key、API/oauth/custom 或未知服务与模型级认证/请求头覆盖仍不在本阶段支持范围；不清配置、不改 OAuth 主体/有效期/私有读取及来源 ABA 快照。不在本增量开放 API/BYOK、Plan、MCP、附件、fork、steer，也不宣称真实账号或完整能力验收通过。
+
+## Stable Identity Follow-up（2026-10-24）
+
+Stage1 已部署后，父会话正式 models 越过配置门禁，准确停在“认证已保存，但当前稳定账号身份无法确认”。用户另报告原生终端 hello 正常生成、M3.1-Flash / 订阅限免 / Effort max；这证明原生生成可用，不证明插件已获得稳定主体，也不证明本次 userinfo 请求成功。
+
+静态 0.6.12 默认 sharedAuthCore 启动分支尝试 userinfo，即便成功也仅保留进程内身份；失败亦可保留有效 token 继续生成。既有 account-identity.json 的 verified 写入只在 legacy 分支，因而要求用户再开 CLI 并不保证补齐缓存。本增量在正式绑定/目录之前，用当前已验证 OAuth proof 请求一次原生固定区域 userinfo，取得字符串 realUserID 后前后重核，才允许后续模型准入；普通账号摘要不隐式发网络。仅严格当前 token 关联的 verified native cache 或该受限 userinfo 可提供主体，不再用未核实 record.subject/accountId 或 legacy profile 凑数。所有网络测试合成，真实 API/CLI/模型、安装与打包仍由父会话另行处理。
+
+## ACP Safe Diagnostic Follow-up（2026-10-24）
+
+身份增量已由父会话独立复验并部署，最新正式 models 已进入 ACP 目录的通用失败；这既不证明本次 HTTP 路径一定成功，也不是目录或模型通过。静态0.6.12 initialize/new/选项合同总体吻合，但 mt 可返回稀疏控件，15秒总预算、输出/帧/退出也都被当前通用提示抹去。本次只增加阶段、原因、布尔检查和固定白名单RPC/退出值的安全诊断，保留不可变首错与独立清理状态。不得猜根因、放宽解析、补假控件、改变预算/Native配置、重做身份流程或触碰刚上线Host延期；由父会话下一次正式 metadata 读取定位后另行修复。
+
+## Select-model Internal Error Follow-up（2026-10-24）
+
+父会话部署安全诊断后的一次正式 models 已证实：init/初态/4个minimax广告项通过，首条model setter返回-32603且cleanup已确认。已排除本次稀疏控件/时限/帧/退出；请求string value与Native schema吻合，仍不能断言内部根因。原生Pg将未处理Error.message解析成error.data或details，外层只显示Internal error。本增量仅对select_model且数值RPC=-32603，在Host内精确白名单匹配已核Native固定details literal或结构化已知code/key/message，输出native_error/envelope_kind枚举。未知为other，不回显原文或按泛VALIDATION_ERROR猜参数，不修wire/身份/effort、不开新目录/服务或放宽门禁。
+
+## Validated Configuration Subset Follow-up（2026-10-24）
+
+父会话下一次实机证据已明确为param_reasoning：原生拒绝当前广告配置的reasoning取值策略，并非own undefined、max或登录失败。现授权从诊断转功能：仅隔离pending作用域严格匹配的exact配置拒绝，拒绝后用同owned进程干净空session严格确认原广告集合，再验证其余tuple；只发布实际确认的模型/effort子集并用现有notice明确数量和限制，不把整个模型判不可用。catalog与专用run保留upstream精确当前值no-op，不重设已确认model/effort；不同选择仍setter+strict验证。未知错误/后态/来源/清理全failclosed，15秒和单CLI进程不增，可能留下有界多个owned空会话。此为功能候选，父会话随后正式模型选择和真实任务验收，不继续仅诊断循环。
+
+## Same-content Atomic Config Save Follow-up（2026-10-24）
+
+父会话已受控实测Native查询后config.yaml原字节及语义完全相同、dev/size/mode/nlink/uid/gid不变，但inode/mtime/ctime变化。原绑定把配置inode等同账号source，令正常Native原子save永久后验失败。本次只分离稳定内容与操作内版本：source.configuration/Binding route用完整安全config raw fingerprint，私有每root有界64 ledger和source WeakMap追版本。同raw同stamp或安全同内容新inode原子替换可继承版本；其它改变、缺失/不安全读取/淘汰均使旧操作安全失效。state/token/credential/cache全戳保持。
+
+这是账号source语义修正，不是移除认证。快照无法证明原子替换由哪个进程写入，也不能完整侦测未被观测的atomic A→B→A；不再宣称完整配置事件溯源。已观测内容/路由变化及in-place ABA仍拒绝，稳定binding在相同来源A恢复A时相同。真实CLI/模型验收仍由父会话后续执行。
+
 ## Capabilities
 
 ### New Capabilities

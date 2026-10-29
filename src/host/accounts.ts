@@ -9,6 +9,7 @@ import {
 } from './claude-own-route.ts'
 import { isExtendedCli } from './extended-adapters.ts'
 import { nativeAgyAccountIdentity } from './agy-windows-account.ts'
+import { agyEnvironment } from './agy-account.ts'
 import { firstPartyEnvironment, MimoConfigurationError } from './first-party-models.ts'
 import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import { randomUUID } from 'node:crypto'
@@ -686,7 +687,7 @@ export class AccountManager {
       startup.throwIfAborted()
       let launch: { argv: string[]; cwd: string; env?: Record<string, string> } = {
         argv: [executable, ...argumentsFor(cli, action)],
-        env: firstPartyEnvironment(cli),
+        env: { ...firstPartyEnvironment(cli), ...agyEnvironment(undefined, this.config) },
         cwd,
       }
       if (cli === 'minimax') {

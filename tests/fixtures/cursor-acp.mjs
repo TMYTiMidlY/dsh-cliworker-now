@@ -13,7 +13,10 @@ createInterface({ input: process.stdin }).on('line', line => {
   const q = JSON.parse(line)
   out({ jsonrpc: '2.0', method: 'synthetic/request', params: { request: q } })
   if (q.method === 'initialize') return reply(q, { protocolVersion: 1, agentCapabilities: { loadSession: true } })
-  if (q.method === 'session/new' || q.method === 'session/load') return reply(q, state)
+  if (q.method === 'session/new' || q.method === 'session/load') {
+    for (const frame of JSON.parse(process.env.CURSOR_SYNTHETIC_REPLAY || '[]')) out(frame)
+    return reply(q, state)
+  }
   if (q.method === 'session/set_config_option') {
     if (typeof q.params.value !== 'string') process.exit(21)
     state.configOptions.find(x => x.id === q.params.configId).currentValue = q.params.value
@@ -23,6 +26,14 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (scenario === 'malformed') return process.stdout.write('INVALID JSON\n')
     if (scenario === 'rpc-error') return out({ jsonrpc: '2.0', id: q.id, error: { code: -1, message: 'SYNTHETIC_PRIVATE_AUTH' } })
     if (scenario === 'nonzero') { reply(q, { stopReason: 'end_turn' }); process.exit(23) }
+    if (process.env.CURSOR_SYNTHETIC_UPDATES) {
+      for (const frame of JSON.parse(process.env.CURSOR_SYNTHETIC_UPDATES)) out(frame)
+      if (scenario === 'cancel') { pending = q; return }
+      if (process.env.CURSOR_SYNTHETIC_RESPONSE) out({ jsonrpc: '2.0', id: q.id, ...JSON.parse(process.env.CURSOR_SYNTHETIC_RESPONSE) })
+      else reply(q, scenario === 'missing-terminal' ? {} : { stopReason: 'end_turn' })
+      for (const frame of JSON.parse(process.env.CURSOR_SYNTHETIC_ENDED || '[]')) out(frame)
+      return
+    }
     update('agent_message_chunk', { content: { type: 'text', text: 'HELLO SYNTHETIC' } })
     if (scenario === 'cancel') { pending = q; return }
     return reply(q, { stopReason: 'end_turn' })

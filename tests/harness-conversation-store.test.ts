@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync, statSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -57,6 +57,51 @@ it('atomically replaces only the current owned association and preserves every r
   const rollback = { ...old, retiredSessionIds: [replacement.sessionId] }
   store.replace(replacement, rollback)
   expect(new HarnessConversationStore(root).list()).toEqual([rollback])
+})
+function stagedUnpublished() {
+  const root = directory(), store = new HarnessConversationStore(root)
+  const prior = { workerId: randomUUID(), parentSessionId: 'synthetic-parent', sessionId: randomUUID(),
+    initialPending: false, retiredSessionIds: [randomUUID()], turnRuns: [{ turn: 1, runId: randomUUID() }] }
+  store.save(prior)
+  const candidate = { workerId: prior.workerId, parentSessionId: prior.parentSessionId, sessionId: randomUUID(),
+    initialRunId: randomUUID(), initialPending: true, retiredSessionIds: [...prior.retiredSessionIds, prior.sessionId] }
+  store.replace(prior, candidate)
+  return { root, store, prior, candidate }
+}
+it('internal unpublished rollback restores exact captured prior and retired set without weakening ordinary replacement', () => {
+  const { root, store, prior, candidate } = stagedUnpublished()
+  expect(() => store.replace(candidate, prior)).toThrow('历史引用')
+  store.restoreUnpublished(candidate, prior)
+  expect(store.list()).toEqual([prior]); expect(new HarnessConversationStore(root).list()).toEqual([prior])
+  expect(() => store.restoreUnpublished(candidate, prior)).toThrow()
+})
+it.each(['worker', 'parent', 'turn', 'retired', 'candidate'] as const)('rejects changed %s in the complete rollback CAS', kind => {
+  const { store, prior, candidate } = stagedUnpublished()
+  const wrong = structuredClone(prior), next = structuredClone(candidate)
+  if (kind === 'worker') wrong.workerId = randomUUID()
+  if (kind === 'parent') wrong.parentSessionId = 'foreign-parent'
+  if (kind === 'turn') wrong.turnRuns[0]!.turn++
+  if (kind === 'retired') wrong.retiredSessionIds.push(randomUUID())
+  if (kind === 'candidate') next.initialRunId = randomUUID()
+  expect(() => store.restoreUnpublished(next, wrong)).toThrow('精确身份或内容')
+  expect(store.list()).toEqual([candidate])
+})
+it.each(['same-value-revision', 'new-turn', 'cold-store'] as const)('rejects %s without rewriting candidate or any previous run', kind => {
+  const { root, store, prior, candidate } = stagedUnpublished()
+  if (kind === 'same-value-revision') store.save({ ...candidate })
+  if (kind === 'new-turn') store.save({ ...candidate, turnRuns: [{ turn: 2, runId: candidate.initialRunId }] })
+  const active = kind === 'cold-store' ? new HarnessConversationStore(root) : store
+  const before = active.list()
+  expect(() => active.restoreUnpublished(candidate, prior)).toThrow('精确身份或内容')
+  expect(active.list()).toEqual(before)
+})
+it('failed unpublished rollback commit does not publish prior or remove the candidate', () => {
+  const { root, store, prior, candidate } = stagedUnpublished()
+  const save = vi.spyOn(store as any, 'commit').mockImplementationOnce(() => { throw new Error('synthetic denied commit') })
+  try {
+    expect(() => store.restoreUnpublished(candidate, prior)).toThrow('denied commit')
+    expect(store.list()).toEqual([candidate]); expect(new HarnessConversationStore(root).list()).toEqual([candidate])
+  } finally { save.mockRestore() }
 })
 it('persists projection-only admitted runs without exposing mutable internal arrays', () => {
   const root = directory(),

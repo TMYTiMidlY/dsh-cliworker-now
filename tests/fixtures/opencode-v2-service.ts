@@ -15,6 +15,8 @@ export async function syntheticOpenCodeV2() {
   for (const key of ['OPENCODE_DB', 'OPENCODE_CONFIG', 'OPENCODE_CONFIG_DIR', 'OPENCODE_CONFIG_CONTENT', 'OPENCODE_SERVER', 'OPENCODE_SERVER_URL', 'OPENCODE_PASSWORD', 'OPENCODE_SERVER_PASSWORD', 'OPENCODE_HOME', 'OPENCODE_DATA_DIR']) vi.stubEnv(key, '')
   vi.stubEnv('XDG_STATE_HOME', nativeState)
   const sessions = new Map<string, any>(), records: any[] = [], children: any[] = [], requests: any[] = []
+  // Observe actual synthetic HTTP admission, not a one-second startup assumption.
+  const firstInput = Promise.withResolvers<void>()
   const globalStreams = new Set<ServerResponse>(), logStreams = new Map<string, Set<ServerResponse>>(), waiters = new Map<string, ServerResponse[]>()
   const payloads: any[] = [], bridgeRequests: any[] = [], spawnSpecs: any[] = []
   let intercept: undefined | ((path: string, body: any, response: ServerResponse, method: string) => boolean)
@@ -122,7 +124,7 @@ export async function syntheticOpenCodeV2() {
       }
       if (operation === 'prompt') {
         const admit = () => {
-        records.push({ sessionId: session.info.id, ...body }); session.finished = false
+        records.push({ sessionId: session.info.id, ...body }); firstInput.resolve(); session.finished = false
         const item = { id: body.id, sessionID: session.info.id, time: { created: Date.now() }, type: 'user', payload: { text: body.text, metadata: body.metadata }, delivery: body.delivery }
         session.inbox.push(item); row(session, 'session.inbox.enqueued', { inboxID: body.id, item: { type: 'user', payload: item.payload, delivery: body.delivery } })
         session.active = true; row(session, 'session.execution.started', {})
@@ -177,7 +179,7 @@ export async function syntheticOpenCodeV2() {
       return { stdout: child.stdout, stderr: child.stderr, done, terminate() { child.kill('SIGTERM') }, async waitForExit() { await done; return true } } as any
     },
   }
-  return { root, project, state, backend, requests, records, payloads, sessions, children, bridgeRequests, spawnSpecs,
+  return { root, project, state, backend, requests, records, payloads, sessions, children, bridgeRequests, spawnSpecs, firstInput: firstInput.promise,
     intercept(fn: typeof intercept) { intercept = fn },
     completeForeignInput(sid: string) {
       const session = sessions.get(sid), id = 'msg_foreign_' + randomUUID().replaceAll('-', '')

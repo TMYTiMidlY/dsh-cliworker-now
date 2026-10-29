@@ -48,6 +48,19 @@ describe('bounded account identity projection', () => {
     expect(JSON.stringify(result)).not.toMatch(/SECRET|eyJ|access_token|refresh_token/)
   })
 
+  it('projects the current native id_token_email without treating email alone as login', async () => {
+    const f = fixture()
+    const native = agy({ id_token: undefined, id_token_email: 'current@example.com' })
+    writeFileSync(f.agyPath, JSON.stringify(native))
+    expect(await f.source('antigravity', f.signal)).toMatchObject({
+      state: 'authenticated', accountLabel: 'current@example.com', verification: 'local',
+    })
+    writeFileSync(f.agyPath, JSON.stringify({ ...native, token: {} }))
+    expect(await f.source('antigravity', f.signal)).toMatchObject({ state: 'unauthenticated' })
+    writeFileSync(f.agyPath, JSON.stringify({ ...native, id_token_email: 'Bearer SECRET@example.com' }))
+    expect((await f.source('antigravity', f.signal))?.accountLabel).toBeUndefined()
+  })
+
   it('does not revive a stale jetski account when the current native login disappears', async () => {
     const f = fixture()
     const legacyPath = join(f.home, '.gemini', 'jetski-standalone-oauth-token')

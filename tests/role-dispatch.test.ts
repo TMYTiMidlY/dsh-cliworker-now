@@ -56,7 +56,8 @@ it('cancellation before complete setup returns never publishes a background job'
     pending = f.start()
   f.controller.abort(new Error('user cancelled'))
   f.answer(f.selected)
-  await expect(pending).rejects.toThrow('user cancelled')
+  await expect(pending).rejects.toThrow('CLI_OPERATION_CANCELLED')
+  await expect(pending).rejects.not.toThrow('user cancelled')
   expect(f.launch).not.toHaveBeenCalled()
 })
 it('explicit no-role setup starts without substituting any preset', async () => {

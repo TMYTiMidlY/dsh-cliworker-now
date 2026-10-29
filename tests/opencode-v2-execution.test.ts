@@ -20,7 +20,11 @@ async function setup(mode = 'success') {
   closes.push(() => runtime.close())
   const preference = { cli: 'opencode' as const, model: `opencode-v2:${Buffer.from(JSON.stringify(['own', 'G', null])).toString('base64url')}`, effort: 'default' as const }
   const submit = (prompt = '明确模拟的纯文本请求', workerId?: string) => runtime.submit('synthetic-parent', service.project, 'v2 owned synthetic', prompt, preference, 'plan', workerId)
-  return { ...service, config, storage, runtime, preference, submit }
+  const waitForFirstInput = async (task: ReturnType<typeof submit>) => {
+    await Promise.race([service.firstInput, task.done.then(worker => { throw new Error(`Synthetic run ended before owned input: ${worker.status}: ${worker.error ?? 'no diagnostic'}`) })])
+    expect(service.records).toHaveLength(1)
+  }
+  return { ...service, config, storage, runtime, preference, submit, waitForFirstInput }
 }
 it('real Host→bridge→v2 synthetic HTTP creates an owned deny-all session, exact model and one durable input', async () => {
   const f = await setup(), result = await f.submit().done
@@ -99,7 +103,7 @@ it.each(['pid-change', 'wait-error', 'ack-unknown'])('quarantines %s despite loc
 it('stop waits for native settled hook/map removal rather than interrupt ACK or local exit', async () => {
   const f = await setup('hold'); f.setWaitDelay(250)
   const task = f.submit()
-  await vi.waitFor(() => expect(f.records).toHaveLength(1))
+  await f.waitForFirstInput(task)
   const start = Date.now(), stop = f.runtime.stop('synthetic-parent', task.worker.id)
   await new Promise(resolve => setTimeout(resolve, 70))
   expect(f.sessions.get(f.records[0].sessionId).active).toBe(true)
@@ -111,7 +115,7 @@ it('stop waits for native settled hook/map removal rather than interrupt ACK or 
 })
 it('bridge kill immediately after admission defaults to quarantine; explicit cleanup-only stop settles without replay', async () => {
   const f = await setup('hold'), task = f.submit()
-  await vi.waitFor(() => expect(f.records).toHaveLength(1))
+  await f.waitForFirstInput(task)
   f.children.at(-1).kill('SIGKILL')
   const result = await task.done
   expect(result.status).toBe('uncertain'); expect(f.sessions.get(result.conversationId).active).toBe(true)
@@ -130,7 +134,8 @@ it.each(['timeout', 'stop'])('unknown delayed native preparation remains quarant
   expect(result.status, result.error).toBe('uncertain')
   expect((await readOwnedLedger(f.state, result.id)).status).toBe('uncertain')
   expect(() => f.runtime.assertCliEnabled('opencode')).toThrow()
-  await vi.waitFor(() => expect(f.records).toHaveLength(1))
+  await f.firstInput
+  expect(f.records).toHaveLength(1)
   expect(f.sessions.get(f.records[0].sessionId).active).toBe(true)
   expect(f.requests.filter(x => x.path.endsWith('/prompt'))).toHaveLength(1)
   const cleaned = await f.runtime.stop('synthetic-parent', result.id)
@@ -168,7 +173,7 @@ it.each(['disconnect-once', 'duplicate-ended'])('recovers/deduplicates %s withou
 })
 it('model.updated and other private source mutations cancel this run, never silently adopt', async () => {
   const f = await setup('hold'), task = f.submit()
-  await vi.waitFor(() => expect(f.records).toHaveLength(1))
+  await f.waitForFirstInput(task)
   f.global('model.updated', { PRIVATE_MODEL_SETTINGS: 'PRIVATE_ENDPOINT' })
   const result = await task.done
   expect(['failed', 'uncertain']).toContain(result.status)
@@ -185,7 +190,7 @@ it('writes pending before backend spawn failure and persists quarantine without 
 })
 it('a cold Host recovers the durable remote quarantine instead of treating local process death as cleanup', async () => {
   const f = await setup('hold'), task = f.submit()
-  await vi.waitFor(() => expect(f.records).toHaveLength(1)); f.children.at(-1).kill('SIGKILL')
+  await f.waitForFirstInput(task); f.children.at(-1).kill('SIGKILL')
   const result = await task.done
   await f.runtime.close()
   const storage = new WorkerStorage(f.state), runtime = new WorkerRuntime(storage, f.backend, f.config)
@@ -203,14 +208,14 @@ it('validates the native model echo before any prompt rather than silently repla
 })
 it.each(['config.updated', 'plugin.updated', 'mcp.tools.changed', 'location.shutdown'])('source watcher cancels %s without projecting its private metadata', async type => {
   const f = await setup('hold'), task = f.submit()
-  await vi.waitFor(() => expect(f.records).toHaveLength(1)); f.global(type, { PRIVATE_CONFIG: 'PRIVATE_SECRET' })
+  await f.waitForFirstInput(task); f.global(type, { PRIVATE_CONFIG: 'PRIVATE_SECRET' })
   const result = await task.done
   expect(['failed', 'uncertain']).toContain(result.status)
   expect(f.records).toHaveLength(1); expect(readFileSync(f.storage.rawPath(result), 'utf8')).not.toContain('PRIVATE_')
 })
 it('foreign input is never deleted and unrelated native global text never enters public records', async () => {
   const f = await setup('hold'), task = f.submit()
-  await vi.waitFor(() => expect(f.records).toHaveLength(1))
+  await f.waitForFirstInput(task)
   const sid = f.records[0].sessionId, foreign = 'msg_FOREIGN_NATIVE_INPUT'
   f.global('session.text.ended', { sessionID: 'ses_other_native_user', assistantMessageID: 'msg_other', ordinal: 0, text: 'PRIVATE_OTHER_SESSION' })
   f.sessions.get(sid).inbox.push({ id: foreign, sessionID: sid, type: 'user', payload: { text: 'PRIVATE_FOREIGN_INPUT' }, delivery: 'queue' })

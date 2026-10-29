@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  chmodSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -269,6 +270,10 @@ describe('ZCode adapter (explicitly synthetic fixtures)', () => {
       outside = join(root, 'unrelated.json')
     mkdirSync(state)
     writeFileSync(outside, 'untouched', { mode: 0o644 })
+    if (process.platform !== 'win32') {
+      chmodSync(outside, 0o644)
+      expect(statSync(outside).mode & 0o777).toBe(0o644)
+    }
     symlinkSync(outside, join(state, 'personal.json'))
     await prepareZCode(input)
     expect(readFileSync(outside, 'utf8')).toBe('untouched')
@@ -282,6 +287,10 @@ describe('ZCode adapter (explicitly synthetic fixtures)', () => {
       const { root, input, state } = setup(),
         outside = join(root, 'unrelated')
       mkdirSync(outside, { mode: 0o755 })
+      if (process.platform !== 'win32') {
+        chmodSync(outside, 0o755)
+        expect(statSync(outside).mode & 0o777).toBe(0o755)
+      }
       if (target !== 'state') mkdirSync(state)
       symlinkSync(outside, target === 'state' ? state : join(state, target))
       await expect(prepareZCode(input)).rejects.toThrow('must not be a symlink')

@@ -5,6 +5,8 @@ import { withQoderCatalogSnapshot } from './qoder-accounts.ts'
 import { resolveModel } from '../shared/models.ts'
 import { cliOf, type CliId, type Preference } from '../shared/types.ts'
 import type { ProcessBackend, RuntimeConfig } from './process.ts'
+import { agyConfigForPreference } from './agy-account.ts'
+import { isCodexCatalogError } from './codex-models.ts'
 
 export const ACCOUNT_CHANGED = '账号已变更，请重新选择或新建任务'
 
@@ -20,7 +22,20 @@ export async function authorizedCatalog(
   const discover = async () => {
     const binding = await readCliAccountBinding(cli, backend, config, project, signal)
     if (expected && binding !== expected) throw new Error(ACCOUNT_CHANGED)
-    const catalog = await catalogFor(cli, backend, config, project, signal)
+    let catalog: Catalog
+    try {
+      catalog = await catalogFor(cli, backend, config, project, signal)
+    } catch (error) {
+      // Only closed Codex source/scope failures reach here after confirmed native
+      // cleanup (or before any spawn). Never add a probe after cleanup uncertainty.
+      if (cli === 'codex' && isCodexCatalogError(error)) {
+        signal.throwIfAborted()
+        const current = await readCliAccountBinding(cli, backend, config, project, signal)
+        signal.throwIfAborted()
+        if (current !== binding) throw new Error(ACCOUNT_CHANGED)
+      }
+      throw error
+    }
     return { binding, catalog }
   }
   const { binding, catalog } =
@@ -47,7 +62,8 @@ export async function authorizeSelection(
   signal: AbortSignal,
   expected?: string,
 ) {
-  const result = await authorizedCatalog(cliOf(preference), backend, config, project, signal, expected)
+  const scopedConfig = agyConfigForPreference(config, preference)
+  const result = await authorizedCatalog(cliOf(preference), backend, scopedConfig, project, signal, expected)
   validatePreference(preference, result.catalog)
   return { ...result, preference: resolveModel(preference, result.catalog.models) }
 }

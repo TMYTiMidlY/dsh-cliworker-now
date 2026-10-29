@@ -99,7 +99,7 @@ function claudeTurn(){
  if(scenario==='duplicate-terminal')claudeEnd();
 }
 function agyEnd(status='SUCCESS'){
- send({event:'result',result:{conversation_id:id,status,response:status==='ERROR'?'历史汇总文本':'合成回复',error:status==='ERROR'?'synthetic summary failure':undefined,usage:{input_tokens:2,output_tokens:1}}});
+ send({event:'result',result:{conversation_id:id,status,response:status==='ERROR'?'历史汇总文本':'合成回复',error:status==='ERROR'?(scenario==='quota-nonzero'?'Individual quota reached. Resets in 18h6m38s.':'synthetic summary failure'):undefined,usage:{input_tokens:2,output_tokens:1}}});
 }
 function agyTurn(){
  send({event:'init',conversation_id:scenario==='identity-mismatch'?'other-session':id,init:{model:scenario==='model-mismatch'?'other-model':'synthetic-model'}});
@@ -116,7 +116,7 @@ function agyTurn(){
  if(scenario==='invalid-step-state')send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'checkpoint',state:'NOT_A_NATIVE_STATE'}});
  const chunks=scenario==='fragmented'?['合','成','回','复']:['合成回复'];chunks.forEach((text_delta,index)=>send({event:'step_update',step_update:{conversation_id:id,step_index:1,step_type:'agent_response',state:index===chunks.length-1?'DONE':'RUNNING',text_delta,...(scenario==='response-usage'?{usage:{input_tokens:100,output_tokens:20,cache_read_tokens:300,total_tokens:120,thinking_tokens:0}}:{})}}));
  if(scenario==='no-terminal')return;
- agyEnd(['failure','summary-conflict','metadata-conflict','unknown-conflict'].includes(scenario)?'ERROR':'SUCCESS');
+ agyEnd(['failure','summary-conflict','metadata-conflict','unknown-conflict','quota-nonzero'].includes(scenario)?'ERROR':'SUCCESS');
  if(scenario==='duplicate-terminal')agyEnd();
 }
 process.on('SIGINT',()=>{if(cli==='antigravity'&&waiting){waiting=false;agyEnd('INTERRUPTED');}});
@@ -151,7 +151,7 @@ lines.on('line',line=>{
   else if(value.request?.subtype==='interrupt'){send({type:'control_response',response:{subtype:'success',request_id:value.request_id,response:{}}});claudeEnd(true);}
  }else if(value.event==='user')agyTurn();
 });
-lines.on('close',()=>{process.exit(scenario==='nonzero-exit'?7:0);});
+lines.on('close',()=>{process.exit(scenario==='nonzero-exit'?7:scenario==='quota-nonzero'?3:0);});
 `
 
 function setup(cli: 'codex' | 'claude' | 'antigravity', scenario = 'success', resume = true) {
@@ -322,6 +322,16 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     expect(frames.filter(frame => frame.event?.kind === 'reasoning')).toHaveLength(0)
     expect(frames.filter(frame => frame.event?.kind === 'diagnostic')).toHaveLength(scenario === 'unknown' ? 1 : 0)
     expect(frames.filter(frame => frame.type === 'native' && frame.record?.event === 'step_update')).toHaveLength(3)
+  })
+  it('real transport close keeps a natural AGY exit3 failed without erasing its native quota declaration', async () => {
+    const { result, frames } = await run('antigravity', 'quota-nonzero')
+    expect(result.status).toBe('ERROR')
+    expect(result.error).toContain('Native process exited unsuccessfully (3)')
+    expect(result.error).toContain('Individual quota reached.')
+    expect(result.error).toContain('并非当前模型余额查询')
+    expect(result.error).toContain('exitCode=3')
+    const diagnostic = frames.find(frame => frame.type === 'event' && frame.event.text === 'Antigravity 原生进程退出证据')
+    expect(JSON.parse(diagnostic.event.detail)).toMatchObject({ exitCode: 3, source: 'process-supervisor' })
   })
   it('never uses an unknown Antigravity step as proof of a fully completed summary conflict', async () => {
     expect((await run('antigravity', 'metadata-conflict')).result.status).toBe('UNCERTAIN')

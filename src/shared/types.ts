@@ -90,6 +90,8 @@ export interface Preference {
   cli?: CliId
   model: string
   effort: Effort
+  /** Antigravity-only isolated HOME selector; absent keeps the deployment default. */
+  agyAccount?: 'default' | 'lxy'
 }
 export interface ModelChoice {
   id: string
@@ -211,7 +213,16 @@ export interface NativeResponseIdentity {
   complete?: true
   usage?: NativeResponseUsage
 }
+export interface FollowupExpectation {
+  expectedModel?: string
+  expectedRunId?: string
+}
+export type RunCleanupState = 'confirmed' | 'unconfirmed' | 'unknown'
 export interface WorkerEvent {
+  /** Written once at admission; never reconstructed from the Worker's later preference. */
+  runConfiguration?: { preference: Preference; mode: TaskMode }
+  /** Terminal evidence for this invocation, independent of model/output success. */
+  runOutcome?: { status: WorkerStatus; error?: string; cleanup: RunCleanupState }
   requestState?: import('./native-request-state.ts').NativeRequestState
   seq: number
   runId: string
@@ -271,6 +282,8 @@ export interface QueuedFollowup {
   pauseReason?: string
 }
 export interface WorkerSnapshot {
+  concurrency?: import('./scheduling.ts').ConcurrencySnapshot
+  scheduling?: Record<string, import('./scheduling.ts').WorkerScheduling>
   externalRequestState?: import('./native-request-state.ts').ExternalRequestState
   /** Exact selected child turn/run totals; never added to native response usage. */
   externalTurnUsage?: import('./native-turn-usage.ts').ExternalTurnUsage

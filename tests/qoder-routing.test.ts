@@ -142,11 +142,12 @@ describe('availability-aware Qoder family routing', () => {
   })
 })
 
-describe('native Qoder variant question before model selection', () => {
-  it('refuses a native question error before model selection or publication', async () => {
+describe('noninteractive Qoder variant resolution before model selection', () => {
+  it('returns an ambiguous CLI error instead of opening a native question', async () => {
     const f = fixture()
-    f.ask.mockRejectedValue(new Error('synthetic question failed'))
-    await expect(f.start()).rejects.toThrow('synthetic question failed')
+    f.ask.mockRejectedValue(new Error('Questions must not be opened'))
+    await expect(f.start()).rejects.toThrow('CLI_AMBIGUOUS')
+    expect(f.ask).not.toHaveBeenCalled()
     expect(f.service.chooseDispatch).not.toHaveBeenCalled()
     expect(f.service.launch).not.toHaveBeenCalled()
     expect(f.service.pending.size).toBe(0)
@@ -170,33 +171,14 @@ describe('native Qoder variant question before model selection', () => {
     expect(f.service.chooseDispatch).toHaveBeenCalledWith(f.agent, expect.any(AbortSignal), cli, 'accept-edits')
     expect(f.backend.spawn).not.toHaveBeenCalled()
   })
-  it.each(['Qoder', 'Qoder CN'])(
-    'asks for both installed and forwards %s only after answer',
-    async (label) => {
+  it.each([['qoder国际版', 'qoder'], ['qodercn', 'qodercn']])(
+    'accepts explicit %s when both are installed without a version card',
+    async (name, cli) => {
       const f = fixture()
-      let answer!: (value: unknown) => void
-      f.ask.mockImplementation(
-        () =>
-          new Promise((resolve) => {
-            answer = resolve
-          }),
-      )
-      const pending = f.start()
-      await vi.waitFor(() => expect(f.ask).toHaveBeenCalledOnce())
-      expect(f.ask.mock.calls[0]![0].questions[0]).toMatchObject({
-        id: 'cliworker_qoder_variant',
-        options: [{ label: 'Qoder' }, { label: 'Qoder CN' }],
-      })
-      expect(f.service.chooseDispatch).not.toHaveBeenCalled()
-      expect(f.service.launch).not.toHaveBeenCalled()
-      answer(f.answer(label))
-      await pending
-      expect(f.service.chooseDispatch).toHaveBeenCalledWith(
-        f.agent,
-        expect.any(AbortSignal),
-        label === 'Qoder' ? 'qoder' : 'qodercn',
-        'accept-edits',
-      )
+      await f.start(name)
+      expect(f.ask).not.toHaveBeenCalled()
+      expect(f.service.chooseDispatch).toHaveBeenCalledWith(f.agent, expect.any(AbortSignal), cli, 'accept-edits')
+      expect(f.service.launch).toHaveBeenCalledOnce()
       expect(f.service.pending.size).toBe(0)
     },
   )
@@ -230,7 +212,12 @@ describe('native Qoder variant question before model selection', () => {
       new ProcessCleanupUnconfirmedError(),
     ]) {
       f.backend.resolveExecutable.mockRejectedValue(error)
-      await expect(f.start()).rejects.toBe(error)
+      const rejected = await f.start().catch((value: unknown) => value)
+      expect(rejected).toBeInstanceOf(Error)
+      expect(rejected).not.toBe(error)
+      expect((rejected as Error).message).toBe(error.message)
+      expect((rejected as Error).cause).toBeUndefined()
+      if (error instanceof ProcessCleanupUnconfirmedError) expect(rejected).toBeInstanceOf(ProcessCleanupUnconfirmedError)
     }
     expect(f.service.runtime.blockCatalogOnCleanup).toHaveBeenCalled()
     expect(f.service.launch).not.toHaveBeenCalled()
@@ -247,34 +234,31 @@ describe('native Qoder variant question before model selection', () => {
   ])('refuses incomplete, multiple or custom answers before selection', async (answer) => {
     const f = fixture()
     f.ask.mockResolvedValue(answer)
-    await expect(f.start()).rejects.toThrow('请选择 Qoder 或 Qoder CN')
+    await expect(f.start()).rejects.toThrow('CLI_AMBIGUOUS')
+    expect(f.ask).not.toHaveBeenCalled()
     expect(f.service.chooseDispatch).not.toHaveBeenCalled()
     expect(f.service.launch).not.toHaveBeenCalled()
   })
-  it('cancels a question and ignores late answers', async () => {
-    const f = fixture()
-    let answer!: (value: unknown) => void
-    f.ask.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          answer = resolve
-        }),
-    )
+  it('cancels installation lookup without questions or late selection', async () => {
+    const f = fixture(['qoder'])
+    let release!: (path: string) => void
+    f.backend.resolveExecutable.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
     const pending = f.start()
-    const rejected = expect(pending).rejects.toThrow('synthetic cancel')
-    await vi.waitFor(() => expect(f.ask).toHaveBeenCalledOnce())
+    const rejected = expect(pending).rejects.toThrow('CLI_OPERATION_CANCELLED')
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
     f.controller.abort(new Error('synthetic cancel'))
+    release('/synthetic/qoder')
     await rejected
-    answer(f.answer('Qoder CN'))
-    await Promise.resolve()
+    await expect(pending).rejects.not.toThrow('synthetic cancel')
+    expect(f.ask).not.toHaveBeenCalled()
     expect(f.service.chooseDispatch).not.toHaveBeenCalled()
     expect(f.service.launch).not.toHaveBeenCalled()
     expect(f.service.pending.size).toBe(0)
   })
   it('rechecks project and native permission after the version answer', async () => {
     for (const changed of ['project', 'plan', 'disabled']) {
-      const f = fixture()
-      f.ask.mockImplementation(async () => {
+      const f = fixture(['qoder'])
+      f.backend.resolveExecutable.mockImplementationOnce(async () => {
         if (changed === 'project') f.agent.session.header.cwd = '/synthetic/changed'
         if (changed === 'plan')
           f.agent.ctx.get = (name: string) =>
@@ -283,7 +267,7 @@ describe('native Qoder variant question before model selection', () => {
           f.service.runtime.assertCliEnabled.mockImplementation(() => {
             throw new Error('disabled')
           })
-        return f.answer('Qoder CN')
+        return '/synthetic/qoder'
       })
       await expect(f.start()).rejects.toThrow()
       expect(f.service.chooseDispatch).not.toHaveBeenCalled()

@@ -42,6 +42,8 @@ export interface HarnessConversationDependencies {
   unbind(record: HarnessConversationRecord): Promise<void>
   /** Exact-current identity replacement; never changes the CLI conversation or history. */
   replaceBinding?(previous: HarnessConversationRecord, next: HarnessConversationRecord): Promise<void>
+  /** Exact CAS only after a typed capacity refusal proved this candidate never became a real child. */
+  restoreUnpublished?(candidate: HarnessConversationRecord, previous: HarnessConversationRecord): Promise<void>
   getWorker(parentSessionId: string, workerId: string): Worker
   /** Includes preparation, submission leases, cleanup and non-paused queued work. */
   busy(record: HarnessConversationRecord): boolean
@@ -87,6 +89,8 @@ export interface HarnessConversationDependencies {
 }
 
 export interface HarnessConversationEnsureOptions {
+  /** Internal unpublished candidate retained only by the same queued Task. */
+  admissionChildId?: string
   initialRunId?: string
   /** Runtime preparation only: display an admitted run, never launch it. */
   projectRun?: boolean

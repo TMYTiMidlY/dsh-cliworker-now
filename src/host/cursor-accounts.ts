@@ -2,14 +2,37 @@ import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, win32 } from 'node:path'
 import { accountEmail, type AccountIdentity } from './account-identity.ts'
-import { captureCatalogMetadata } from './adapters.ts'
-import type { ProcessBackend, RuntimeConfig } from './process.ts'
+import { captureCatalogMetadata, resolveCliExecutable } from './adapters.ts'
+import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
+import { MetadataCaptureError, metadataSystemReason, type MetadataPhase, type MetadataReason } from './metadata-diagnostics.ts'
 
 export class CursorAccountError extends Error {
   readonly code = 'CLI_OWN_ACCOUNT_REQUIRED'
   constructor(message = 'Cursor 原生账号身份无法确认，请在账号终端检查登录后刷新') {
     super(message)
     this.name = 'CursorAccountError'
+  }
+}
+/** Process evidence, not an authentication verdict. No original error is retained. */
+export class CursorMetadataError extends Error {
+  readonly code = 'CLI_METADATA_QUERY_FAILED'
+  readonly phase: MetadataPhase
+  readonly reason: MetadataReason
+  readonly exitCode: number | null
+  constructor(diagnostic: MetadataCaptureError) {
+    const safe = new MetadataCaptureError(diagnostic.phase, diagnostic.reason, diagnostic.exitCode)
+    super(`Cursor 原生身份元数据调用失败（phase=${safe.phase}; reason=${safe.reason}; exitCode=${safe.exitCode ?? 'unknown'}），请核查原生 CLI 后再确认`)
+    this.name = 'CursorMetadataError'; this.phase = safe.phase; this.reason = safe.reason; this.exitCode = safe.exitCode
+  }
+}
+/** Same resolver/selection policy; only this binding preparation boundary gains diagnostics. */
+export async function resolveCursorBindingExecutable(backend: ProcessBackend, config: RuntimeConfig, signal: AbortSignal): Promise<string> {
+  signal.throwIfAborted()
+  try { return await resolveCliExecutable('cursor', backend, config, signal) }
+  catch (error) {
+    if (error instanceof ProcessCleanupUnconfirmedError) throw error
+    signal.throwIfAborted()
+    throw new CursorMetadataError(new MetadataCaptureError('resolve', metadataSystemReason(error)))
   }
 }
 const record = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -61,8 +84,16 @@ export function projectCursorStatus(value: unknown): CursorAccountProjection {
 
 export async function readCursorAccount(backend: ProcessBackend, config: RuntimeConfig, executable: string, cwd: string, signal: AbortSignal): Promise<CursorAccountProjection> {
   assertCursorNativeRoute()
-  const raw = await captureCatalogMetadata(backend, { ...config, maxRunBytes: Math.min(config.maxRunBytes, 65536) },
-    [executable, 'status', '--format', 'json'], cwd, signal)
+  let raw: string
+  try {
+    raw = await captureCatalogMetadata(backend, { ...config, maxRunBytes: Math.min(config.maxRunBytes, 65536) },
+      [executable, 'status', '--format', 'json'], cwd, signal, undefined, [0], true)
+  } catch (error) {
+    if (error instanceof ProcessCleanupUnconfirmedError) throw error
+    signal.throwIfAborted()
+    if (error instanceof MetadataCaptureError) throw new CursorMetadataError(error)
+    throw error
+  }
   signal.throwIfAborted()
   assertCursorNativeRoute()
   let value: unknown

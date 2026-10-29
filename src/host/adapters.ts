@@ -1,10 +1,12 @@
 import { StringDecoder } from 'node:string_decoder'
+import { MetadataCaptureError, metadataSystemReason, metadataExitCode, metadataSignalReason, metadataNativeHint, type MetadataPhase, type MetadataReason } from './metadata-diagnostics.ts'
 import { qoderVariant } from './qoder-variant.ts'
 import { readClaudeOwnRoute, claudeNativeSettingsArguments } from './claude-own-route.ts'
 import { discoverClaudeNativeOAuth } from './claude-native-oauth.ts'
 import { discoverCodexModels } from './codex-models.ts'
 import { discoverAgyAccountModels } from './agy-models.ts'
 import { agyBackgroundEnvironment } from './agy-background-environment.ts'
+import { agyEnvironment, agyHome } from './agy-account.ts'
 import { discoverQoderModels } from './qoder-accounts.ts'
 import { cursorExecutable, assertCursorNativeRoute } from './cursor-accounts.ts'
 import { discoverCursorModels } from './cursor-models.ts'
@@ -104,6 +106,8 @@ export const executableFor = (cli: CliId, config: RuntimeConfig): string => {
   const nativePath = join(homedir(), nativeDirectory, cli)
   return existsSync(nativePath) ? nativePath : (configured ?? cli)
 }
+// Native AGY startup may exceed the generic metadata window; this is not a task budget.
+export const AGY_CATALOG_TIMEOUT_MS = 60_000
 /** Read-only discovery with bounded output. Never persist or expose provider credentials. */
 export async function captureCatalogMetadata(
   backend: ProcessBackend,
@@ -113,49 +117,88 @@ export async function captureCatalogMetadata(
   signal: AbortSignal,
   env?: Record<string, string>,
   allowedExitCodes: readonly number[] = [0],
+  safeDiagnostics = false,
+  metadataTimeoutMs = 15_000,
 ) {
   signal.throwIfAborted()
-  const control = AbortSignal.any([signal, AbortSignal.timeout(15000)])
-  const process = backend.spawn({
-    argv,
-    cwd,
-    env,
-    stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
-    graceMs: config.graceMs,
-    signal: control,
-  })
-  void process.done.catch(() => undefined)
-  let output = '',
-    bytes = 0
-  const read = async (stream: typeof process.stdout, keep: boolean) => {
-    if (!stream) return
-    // A multi-byte UTF-8 character may be split across chunks.
-    const decoder = new StringDecoder('utf8')
-    for await (const chunk of stream) {
-      bytes += Buffer.byteLength(chunk)
-      if (bytes > config.maxRunBytes) throw new Error('CLI discovery output too large')
-      if (keep) output += decoder.write(chunk)
-    }
-    if (keep) output += decoder.end()
-  }
-  const readers = [read(process.stdout, true), read(process.stderr, false)]
+  if (!Number.isSafeInteger(metadataTimeoutMs) || metadataTimeoutMs < 1 || metadataTimeoutMs > 60_000)
+    throw new Error('Invalid bounded CLI metadata timeout')
+  const deadline = AbortSignal.timeout(metadataTimeoutMs)
+  const control = AbortSignal.any([signal, deadline])
+  let child: ReturnType<ProcessBackend['spawn']> | undefined
+  let readers: Promise<void>[] = [], removeAbort = () => {}, preservedCleanup = false
+  const diagnose = (phase: MetadataPhase, error: unknown, reason?: MetadataReason) =>
+    error instanceof ProcessCleanupUnconfirmedError ? error : safeDiagnostics ? new MetadataCaptureError(phase, reason ?? metadataSystemReason(error)) : error
+  let output = '', diagnosticTail = '', bytes = 0
   try {
-    await Promise.all(readers)
-    const outcome = await process.done
     control.throwIfAborted()
-    if (outcome.exitCode === null || !allowedExitCodes.includes(outcome.exitCode))
-      throw new Error('CLI 模型查询失败，请在终端检查该 CLI 配置')
-    return output
-  } finally {
-    let exited = false
     try {
-      process.terminate()
-      exited = await process.waitForExit()
-    } catch {
-      throw new ProcessCleanupUnconfirmedError()
+      child = backend.spawn({ argv, cwd, env, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' }, graceMs: config.graceMs, signal: control })
+    } catch (error) { throw diagnose('spawn', error) }
+    void child.done.catch(() => undefined)
+    const read = async (stream: ReturnType<ProcessBackend['spawn']>['stdout'], keep: boolean) => {
+      if (!stream) return
+      try {
+        const decoder = new StringDecoder('utf8')
+        for await (const chunk of stream) {
+          bytes += Buffer.byteLength(chunk)
+          if (bytes > config.maxRunBytes) throw safeDiagnostics ? new MetadataCaptureError('read', 'output-limit') : new Error('CLI discovery output too large')
+          if (keep) output += decoder.write(chunk)
+          else if (safeDiagnostics) diagnosticTail = (diagnosticTail + decoder.write(chunk)).slice(-4096)
+        }
+        if (keep) output += decoder.end()
+        else if (safeDiagnostics) diagnosticTail = (diagnosticTail + decoder.end()).slice(-4096)
+      } catch (error) { throw error instanceof MetadataCaptureError ? error : diagnose('read', error) }
     }
-    if (!exited) throw new ProcessCleanupUnconfirmedError()
-    await Promise.allSettled([...readers, process.done])
+    readers = [read(child.stdout, true), read(child.stderr, false)]
+    let outcome: Awaited<ReturnType<ProcessBackend['spawn']>['done']>
+    if (safeDiagnostics) {
+      const completion = child.done.catch(error => { throw diagnose('exit', error) })
+      const aborted = new Promise<never>((_resolve, reject) => {
+        const abort = () => reject(control.reason)
+        control.addEventListener('abort', abort, { once: true })
+        removeAbort = () => control.removeEventListener('abort', abort)
+        if (control.aborted) abort()
+      })
+      const completed = await Promise.race([Promise.all([completion, Promise.all(readers)] as const), aborted])
+      outcome = completed[0]
+    } else {
+      // Preserve the legacy ordering and public error identity for other CLIs.
+      await Promise.all(readers)
+      outcome = await child.done
+    }
+    control.throwIfAborted()
+    if (safeDiagnostics) {
+      let code: unknown, termination: unknown
+      try { code = outcome?.exitCode; termination = outcome?.signal }
+      catch (error) { throw diagnose('exit', error) }
+      const exitCode = metadataExitCode(code), signaled = termination !== null && termination !== undefined
+      if (exitCode === null || !allowedExitCodes.includes(exitCode) || signaled)
+        throw new MetadataCaptureError('exit', signaled ? metadataSignalReason(termination) : exitCode !== null ? 'exit' : 'unknown', exitCode, metadataNativeHint(diagnosticTail + '\n' + output.slice(-4096)))
+    } else if (outcome.exitCode === null || !allowedExitCodes.includes(outcome.exitCode)) {
+      throw new Error('CLI 模型查询失败，请在终端检查该 CLI 配置')
+    }
+    return output
+  } catch (error) {
+    // Caller cancellation is control flow, never a diagnostic based on its text.
+    if (error instanceof ProcessCleanupUnconfirmedError) { preservedCleanup = true; throw error }
+    if (safeDiagnostics && signal.aborted) throw signal.reason
+    if (safeDiagnostics && deadline.aborted) throw new MetadataCaptureError('timeout', 'deadline')
+    throw error
+  } finally {
+    removeAbort()
+    if (child) {
+      let exited = false
+      try { await child.terminate(); exited = await child.waitForExit() }
+      catch { throw new ProcessCleanupUnconfirmedError() }
+      if (!exited) throw new ProcessCleanupUnconfirmedError()
+      const settled = await Promise.allSettled([...readers, child.done])
+      if (safeDiagnostics) {
+        const cleanup = settled.find((value): value is PromiseRejectedResult => value.status === 'rejected' && value.reason instanceof ProcessCleanupUnconfirmedError)
+        if (cleanup) throw cleanup.reason
+        if (!preservedCleanup) signal.throwIfAborted()
+      }
+    }
   }
 }
 const capture = captureCatalogMetadata
@@ -173,8 +216,11 @@ export async function catalogFor(
     if (!models.length) throw new Error(`${qoderVariant(cli).label} 当前账号暂无可确认模型，请登录或刷新`)
     return { cli, models, notice: `${qoderVariant(cli).label} 原生账号模型目录；调用权限以实际请求为准` }
   }
-  if (cli === 'minimax') return { cli, models: await discoverMiniMaxModels(backend, config, executable, cwd, signal),
-    notice: 'MiniMax Code 当前原生账号 ACP 目录；实际模型/强度回执，不代表真实生成或 Windows 验收' }
+  if (cli === 'minimax') {
+    const catalog = await discoverMiniMaxModels(backend, config, executable, cwd, signal)
+    return { cli, models: catalog.models,
+      notice: [catalog.notice, 'MiniMax Code 当前原生账号 ACP 目录；实际模型/强度回执，不代表真实生成或 Windows 验收'].filter(Boolean).join(' ') }
+  }
   if (cli === 'cursor') return { cli, models: await discoverCursorModels(backend, config, executable, cwd, signal),
     notice: 'Cursor 原生 ACP 模型目录；参数化 ID 原样保留，仅支持默认强度；调用权限以实际请求为准' }
   if (cli === 'opencode') {
@@ -203,9 +249,11 @@ export async function catalogFor(
   }
   if (cli === 'antigravity') {
     const models = await discoverAgyAccountModels(
-      () => capture(backend, config, [executable, 'models'], cwd, signal, agyBackgroundEnvironment(cli)),
+      () => capture(backend, config, [executable, 'models'], cwd, signal,
+        { ...agyEnvironment(undefined, config), ...agyBackgroundEnvironment(cli) },
+        [0], true, AGY_CATALOG_TIMEOUT_MS),
       signal,
-      undefined,
+      agyHome(undefined, config),
       nativeAgyAccountIdentity(backend, config),
     )
     return { cli, models, notice: '当前账号可用模型' }
@@ -286,6 +334,7 @@ export function parseMimoModels(output: string): ModelChoice[] {
   return models
 }
 export function validatePreference(preference: Preference, catalog: Catalog): void {
+  if (preference.agyAccount !== undefined && cliOf(preference) !== 'antigravity') throw new Error('agyAccount 仅适用于 Antigravity')
   if (cliOf(preference) !== catalog.cli) throw new Error('CLI 配置不匹配')
   if (catalog.executionUnavailable) throw new OpenCodeCompatibilityError(catalog.executionUnavailable)
   resolveModel(preference, catalog.models)

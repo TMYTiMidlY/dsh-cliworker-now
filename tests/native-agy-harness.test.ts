@@ -7,7 +7,7 @@ import { createNativeHarnessTools } from '../src/host/native-harness-tools.ts'
 import { prepareNativeWorker } from '../src/host/native-worker.ts'
 import { DEFAULT_CONFIG } from '../src/host/process.ts'
 import { HARNESS_CONNECTION_ENV } from '../src/host/native-harness-mcp.mjs'
-import { nativeAgyArgv } from '../src/host/native-agy.mjs'
+import { nativeAgyArgv, runNativeAgy } from '../src/host/native-agy.mjs'
 import { AGY_HARNESS_SESSION_FILE, prepareAgyHarnessWorkspace, recordAgyHarnessSession, agyHarnessHookDecision, agyHarnessServerName } from '../src/host/native-agy-harness.mjs'
 
 // Synthetic tools and CLI identities; no account, external MCP or model is used.
@@ -89,6 +89,19 @@ it('runs the real Hook entry through its private environment without executing a
   expect(JSON.parse(stdout)).toMatchObject({ decision: 'auto_approve' })
   expect(stdout + stderr).not.toContain(f.lease.connection.token)
   expect(f.execute).not.toHaveBeenCalled()
+})
+it('rejects native init model mismatch while preserving observed model evidence, never trusting answer self-identification', async () => {
+  let receive!: (value: any) => void, reject!: (reason: any) => void
+  const pending = new Promise((_, fail) => { reject = fail }), events: any[] = []
+  const io = { signal: new AbortController().signal, session: vi.fn(), result: vi.fn(), native: vi.fn(), event: (event: any) => events.push(event),
+    openStdio: async () => ({ onMessage(callback: any) { receive = callback; return () => {} }, waitFor: () => pending,
+      send: async () => receive({ event: 'init', conversation_id: 'synthetic-session', init: { model: 'SYNTHETIC_ARGON' } }),
+      end() {}, kill() {}, close: async () => { reject(new Error('synthetic peer closed')) } }) }
+  const config = { argv: ['synthetic-agy', '--output-format', 'stream-json', '--model', 'SYNTHETIC_OPUS', '--mode', 'plan', '--print', '任务：\nsynthetic'],
+    preference: { cli: 'antigravity', model: 'SYNTHETIC_OPUS', effort: 'default' }, mode: 'plan', prompt: 'synthetic', timeoutMs: 1000 }
+  await expect(runNativeAgy(config, io)).rejects.toThrow('原生初始化模型与明确选型不一致')
+  expect(events).toContainEqual(expect.objectContaining({ observedModel: 'SYNTHETIC_ARGON' }))
+  expect(io.result).not.toHaveBeenCalled(); expect(io.session).not.toHaveBeenCalled()
 })
 it('owns configuration and private identity through NativeWorker cleanup without persisting its connection (synthetic)', async () => {
   const f = await fixture()

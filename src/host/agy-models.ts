@@ -1,14 +1,13 @@
 import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { localAccountIdentity, type AccountIdentitySource } from './account-identity.ts'
-import { readFirstPartyJson } from './first-party-models.ts'
+import { readAgySettings } from './agy-settings.ts'
 import { groupAgyModels } from '../shared/models.ts'
 import type { ModelChoice } from '../shared/types.ts'
 
 /** The native consumer directory is account-scoped, not a public model cache. */
 export async function assertAgyNativeAccountRoute(signal: AbortSignal, home = homedir()): Promise<void> {
   signal.throwIfAborted()
-  const settings = await readFirstPartyJson(join(home, '.gemini/antigravity-cli/settings.json'))
+  const settings = await readAgySettings(home)
   signal.throwIfAborted()
   const configured = (value: unknown) =>
     value !== undefined &&

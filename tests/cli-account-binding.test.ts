@@ -173,6 +173,7 @@ it('an unsupported Pi OAuth provider does not hide another provider with its own
   await expect(run('pi')).rejects.toThrow('无法确认当前自身账号')
 })
 beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('Synthetic binding test forbids network') }))
   vi.clearAllMocks()
   fixture.home = mkdtempSync(join(tmpdir(), 'cwn-binding-synthetic-'))
   fixture.sources = {}
@@ -213,6 +214,7 @@ beforeEach(() => {
   vi.stubEnv('QODER_CONFIG_DIR', join(fixture.home, '.qoder'))
 })
 afterEach(() => {
+  vi.unstubAllGlobals()
   vi.unstubAllEnvs()
   rmSync(fixture.home, { force: true, recursive: true })
 })
@@ -228,6 +230,28 @@ function agy(sub = 'own-agy', refresh = 'synthetic-refresh') {
     id_token: jwt(sub),
   })
 }
+it.skipIf(process.platform === 'win32')('binds native AGY id_token_email with opaque consumer tokens after re-login', async () => {
+  const path = join(fixture.home, '.gemini/antigravity-cli/antigravity-oauth-token')
+  const native = (email: string, refresh = 'synthetic-refresh') => ({
+    auth_method: 'consumer',
+    token: { access_token: 'synthetic-opaque-access', refresh_token: refresh, expiry: '2099-01-01T00:00:00Z' },
+    id_token_email: email,
+  })
+  write(path, native('own@synthetic.example'))
+  const before = await run('antigravity')
+  write(path, native('own@synthetic.example', 'synthetic-refreshed-token'))
+  expect(await run('antigravity')).toEqual(before)
+  expect(JSON.stringify(before)).not.toMatch(/synthetic-opaque|synthetic-refresh|own@/)
+  write(path, native('other@synthetic.example'))
+  expect(await run('antigravity')).not.toEqual(before)
+  write(path, { auth_method: 'consumer', token: {}, id_token_email: 'own@synthetic.example' })
+  await expect(run('antigravity')).rejects.toThrow('无法确认当前自身账号')
+  write(path, native('Bearer secret@synthetic.example'))
+  await expect(run('antigravity')).rejects.toThrow('无法确认当前自身账号')
+  write(path, { ...native('own@synthetic.example'), auth_method: 'other' })
+  await expect(run('antigravity')).rejects.toThrow('无法确认当前自身账号')
+})
+
 function zcode(identity = 'own-zcode', key = 'synthetic-zcode-key') {
   const provider = 'account:bigmodel-individual-coding-plan'
   config.zcodeBuiltinConfig = join(fixture.home, 'zcode-builtin.json')
@@ -314,7 +338,8 @@ function own(cli: CliId) {
     const common = { clientId: 'mcode-public', audience: 'agent-backend', scopes: ['agent.default'], generation: 1, expiresAtMs: 4e12 }
     const key = 'com.minimax.mcode.oauth.prod.cn\0' + createHash('sha256').update(join(root, 'auth') + '\0mcode-public').digest('base64url')
     write(join(directory, 'auth-state.json'), { schemaVersion: 2, storeKind: 'file', status: 'authenticated', buildEnv: 'prod', region: 'cn', ...common })
-    write(join(directory, 'auth.json'), { schemaVersion: 1, records: { [key]: { schemaVersion: 1, tokenType: 'Bearer', accessToken: 'synthetic-access', refreshToken: 'synthetic-refresh', subject: 'synthetic-minimax-user', ...common } } })
+    write(join(directory, 'auth.json'), { schemaVersion: 1, records: { [key]: { schemaVersion: 1, tokenType: 'Bearer', accessToken: 'synthetic-access', refreshToken: 'synthetic-refresh', ...common } } })
+    write(join(root, 'cli-auth/prod/cn/account-identity.json'), { version: 1, status: 'verified', region: 'cn', buildEnv: 'prod', tokenFingerprint: 'sha256:' + createHash('sha256').update('synthetic-access').digest('hex'), realUserID: 'synthetic-minimax-user', updatedAtMs: Date.now() })
   }
   else if (cli === 'qoder') vi.stubEnv('QODER_PERSONAL_ACCESS_TOKEN', 'synthetic-own-qoder-pat')
   else if (cli === 'qodercn') vi.stubEnv('QODERCN_PERSONAL_ACCESS_TOKEN', 'synthetic-own-qodercn-pat')
@@ -434,6 +459,8 @@ it('rejects an Antigravity route change even when its old consumer login file re
 it('binds Codex account and workspace, not refreshed access/refresh tokens', async () => {
   own('codex')
   const first = await run('codex')
+  const originalSource = await readCodexOwnAccountSource(project, new AbortController().signal)
+  expect(originalSource.sourceIdentity).toMatch(/^[a-f0-9]{64}$/)
   const path = join(fixture.home, '.codex/auth.json')
   write(path, {
     tokens: {
@@ -446,6 +473,7 @@ it('binds Codex account and workspace, not refreshed access/refresh tokens', asy
   expect(await run('codex')).toBe(first)
   const source = await readCodexOwnAccountSource(project, new AbortController().signal)
   expect(source.credential.expires).toBe((4e9 + 100) * 1000)
+  expect(source.sourceIdentity).toBe(originalSource.sourceIdentity)
   write(path, {
     tokens: {
       access_token: jwt('own-codex'),
@@ -455,6 +483,35 @@ it('binds Codex account and workspace, not refreshed access/refresh tokens', asy
     },
   })
   expect(await run('codex')).not.toBe(first)
+  expect((await readCodexOwnAccountSource(project, new AbortController().signal)).sourceIdentity).not.toBe(originalSource.sourceIdentity)
+})
+
+it('keeps the private Codex source identity distinct for principal, native root and API route changes', async () => {
+  own('codex')
+  const source = () => readCodexOwnAccountSource(project, new AbortController().signal)
+  const original = await source()
+  write(join(fixture.home, '.codex/auth.json'), { tokens: {
+    access_token: jwt('another-codex-subject'), id_token: jwt('another-codex-subject'),
+    refresh_token: 'synthetic-refresh', account_id: 'own-workspace',
+  } })
+  expect((await source()).sourceIdentity).not.toBe(original.sourceIdentity)
+  own('codex')
+  const alternateRoot = join(fixture.home, 'alternate-codex')
+  write(join(alternateRoot, 'auth.json'), { auth_mode: 'chatgpt', tokens: {
+    access_token: jwt('own-codex'), id_token: jwt('own-codex'),
+    refresh_token: 'synthetic-refresh', account_id: 'own-workspace',
+  } })
+  vi.stubEnv('CODEX_HOME', alternateRoot)
+  expect((await source()).sourceIdentity).not.toBe(original.sourceIdentity)
+  vi.stubEnv('CODEX_HOME', '')
+  expect((await source()).sourceIdentity).toBe(original.sourceIdentity)
+  write(join(fixture.home, '.codex/auth.json'), { auth_mode: 'apikey', OPENAI_API_KEY: 'synthetic-api-a' })
+  const api = await source()
+  expect(api.provider).toBe('openai'); expect(api.sourceIdentity).not.toBe(original.sourceIdentity)
+  write(join(fixture.home, '.codex/auth.json'), { auth_mode: 'apikey', OPENAI_API_KEY: 'synthetic-api-b' })
+  const replaced = await source()
+  expect(replaced.sourceIdentity).not.toBe(api.sourceIdentity)
+  expect(replaced.sourceIdentity).toMatch(/^[a-f0-9]{64}$/)
 })
 
 it('uses the effective Codex keyring account rather than an old file or API-only status', async () => {

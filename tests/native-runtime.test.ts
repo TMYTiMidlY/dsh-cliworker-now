@@ -19,6 +19,7 @@ import { DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
 import { CLI_IDS } from '../src/shared/types.ts'
 import { NATIVE_TRANSPORTS, usesNativeBridge } from '../src/host/native-worker.ts'
 import { extractTelemetry } from '../src/host/telemetry.ts'
+import { workerRunResult } from '../src/host/worker-result.ts'
 
 // Synthetic account admission and native bridge records. No user CLI or model is called.
 vi.mock('../src/host/cli-account-binding.ts', () => ({
@@ -41,6 +42,7 @@ afterEach(async () => {
   for (const close of closes.splice(0).reverse()) await close()
 })
 function setup(status = 'SUCCESS') {
+  let reply = '本轮正文'
   const project = realpathSync(mkdtempSync(join(tmpdir(), 'cwn-native-runtime-')))
   closes.push(() => rmSync(project, { recursive: true, force: true }))
   const executable = join(project, 'synthetic-cli.mjs')
@@ -67,12 +69,12 @@ function setup(status = 'SUCCESS') {
         const records = isBridge
           ? [
               { type: 'session', id: 'synthetic-session', model: 'synthetic-model' },
-              { type: 'event', event: { kind: 'assistant', step: 0, text: '本轮正文' } },
+              { type: 'event', event: { kind: 'assistant', step: 0, text: reply } },
               {
                 type: 'result',
                 status,
-                response: '本轮正文',
-                ...(status === 'UNCERTAIN' ? { error: '结果待核实，不要自动重试' } : {}),
+                response: reply,
+                ...(status === 'UNCERTAIN' ? { error: '结果待核实，不要自动重试' } : status === 'ERROR' ? { error: 'SYNTHETIC_PRIOR_QUOTA' } : {}),
               },
             ]
           : [
@@ -107,9 +109,32 @@ function setup(status = 'SUCCESS') {
   // Windows Qoder PE/npm installation. Do not read the user's real install.
   const runtime = new WorkerRuntime(storage, backend, { ...DEFAULT_CONFIG, qoderExecutable: executable })
   closes.push(() => runtime.close())
-  return { project, storage, runtime, requests, calls, executable }
+  return { project, storage, runtime, requests, calls, executable, setResult(nextStatus: string, nextReply: string) { status = nextStatus; reply = nextReply } }
 }
 const pref = { cli: 'antigravity' as const, model: 'synthetic-model', effort: 'low' as const }
+it.each(['ERROR', 'UNCERTAIN'])('same Worker starts a clean new run after %s while the exact old result remains readable', async nativeStatus => {
+  const f = setup(nativeStatus), oldText = 'SYNTHETIC_OLD_PUBLIC_REPLY', newText = 'SYNTHETIC_NEW_PUBLIC_REPLY'
+  f.setResult(nativeStatus, oldText)
+  const first = await f.runtime.submit('parent', f.project, 'Synthetic failure', 'SYNTHETIC_FIRST_INPUT', pref, 'plan').done
+  const id = first.id, priorRun = first.runId, nativeId = first.conversationId, binding = f.storage.accountBinding(id)
+  const old = workerRunResult(f.storage, first, { runId: priorRun, limit: 8192 })
+  expect(old).toMatchObject({ status: nativeStatus === 'ERROR' ? 'failed' : 'uncertain', body: oldText, cleanup: 'confirmed', partial: true })
+  expect(old.error).toContain(nativeStatus === 'ERROR' ? 'SYNTHETIC_PRIOR_QUOTA' : '待核实')
+  const oldHistory = structuredClone(f.storage.history(id).filter(event => event.runId === priorRun))
+  f.setResult('SUCCESS', newText)
+  const next = f.runtime.submit('parent', f.project, 'Synthetic next turn', 'SYNTHETIC_NEW_INPUT', pref, 'plan', id)
+  expect(next.worker.runId).not.toBe(priorRun)
+  expect(next.worker).toMatchObject({ id, status: 'queued', error: undefined, lastResult: undefined, observedModel: undefined })
+  expect(workerRunResult(f.storage, next.worker, { runId: next.worker.runId })).toMatchObject({ body: '', error: null, partial: true })
+  const completed = await next.done
+  expect(completed).toMatchObject({ id, status: 'completed', conversationId: nativeId, lastResult: newText, error: undefined })
+  expect(workerRunResult(f.storage, completed)).toMatchObject({ status: 'completed', body: newText, error: null, partial: false, cleanup: 'confirmed' })
+  expect(workerRunResult(f.storage, completed, { runId: priorRun, limit: 8192 })).toMatchObject({ status: old.status, body: oldText, error: old.error, cleanup: old.cleanup })
+  expect(f.storage.history(id).filter(event => event.runId === priorRun)).toEqual(oldHistory)
+  expect(f.storage.workers.size).toBe(1); expect(f.storage.accountBinding(id)).toBe(binding)
+  expect(f.requests).toHaveLength(2); expect(f.requests[1].prompt).toBe('SYNTHETIC_NEW_INPUT')
+})
+
 it('carries Host-resolved uploads only in the exact native request and removes the request after cleanup', async () => {
   const f = setup(), path = join(f.project, '上传.txt')
   writeFileSync(path, 'synthetic')

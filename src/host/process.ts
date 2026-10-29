@@ -1,4 +1,5 @@
 import { StringDecoder } from 'node:string_decoder'
+import { DEFAULT_CONCURRENCY } from '../shared/scheduling.ts'
 import type {
   SubprocessHandle,
   SubprocessSpawnSpec,
@@ -11,6 +12,7 @@ import { isAbsolute, parse, resolve, sep } from 'node:path'
 import type { ModelChoice, Preference, TaskMode } from '../shared/types.ts'
 import type { CliExecutablePathStore } from './cli-executable-paths.ts'
 import { agyBackgroundEnvironment } from './agy-background-environment.ts'
+import { agyEnvironment } from './agy-account.ts'
 import type { NativeHarnessConnection } from './native-harness-tools.ts'
 import type { NativeAttachment } from './native-attachments.mjs'
 
@@ -19,12 +21,18 @@ export interface ProcessBackend {
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle
   spawnTerminal?(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>
 }
+const cleanupFailures = new WeakSet<object>()
 /** A process range is still unconfirmed; callers must stop admitting work. */
 export class ProcessCleanupUnconfirmedError extends Error {
   constructor() {
     super('CLI catalog process cleanup did not reach quiescence')
+    cleanupFailures.add(this)
     this.name = 'ProcessCleanupUnconfirmedError'
   }
+}
+/** Constructor-owned identity, including real subclasses; never traverses unknown prototypes. */
+export function isProcessCleanupUnconfirmedError(value: unknown): value is ProcessCleanupUnconfirmedError {
+  return value !== null && (typeof value === 'object' || typeof value === 'function') && cleanupFailures.has(value as object)
 }
 export interface RuntimeConfig {
   /** Host-resolved upload references for one task, never deployment settings. */
@@ -33,6 +41,8 @@ export interface RuntimeConfig {
   harnessTools?: NativeHarnessConnection
   /** Host-private machine-local CLI path preferences, shared by all entry points. */
   cliExecutablePaths?: CliExecutablePathStore
+  /** Deployment default for Antigravity's isolated HOME selector. */
+  agyAccount?: 'default' | 'lxy'
   executable: string
   codexExecutable?: string
   claudeExecutable?: string
@@ -65,8 +75,9 @@ export interface RuntimeConfig {
   maxTimelineItems: number
 }
 export const DEFAULT_CONFIG: RuntimeConfig = {
+  agyAccount: 'default',
   executable: 'agy',
-  maxConcurrent: 2,
+  maxConcurrent: DEFAULT_CONCURRENCY,
   timeoutMs: 1_800_000,
   graceMs: 5000,
   maxLineBytes: 1_048_576,
@@ -163,7 +174,7 @@ export async function discoverModels(
   const process = backend.spawn({
     argv: [executable, 'models'],
     cwd,
-    env: agyBackgroundEnvironment('antigravity'),
+    env: { ...agyEnvironment(undefined, config), ...agyBackgroundEnvironment('antigravity') },
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: config.graceMs,
     signal: control,

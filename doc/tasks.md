@@ -1,5 +1,122 @@
 # 实施任务与验证记录
 
+## 2026-10-29 Round19：Worker目录绑定账号修复与保守收口
+
+- 人工continue后重核原分支/HEAD/index及全部children/jobs，没有活动写者或待收尾Native任务。上一份[冻结全量](../.cache/conservative-close-r18-frozen-tests.json)实际 **5630PASS/0FAIL/17SKIP，250 suites**；[808个代码/测试/构建输入](../.cache/conservative-close-r18-code-inputs.json)在本轮修改前复核全相同。先前12项已修复；中间那份“final-tests”执行时恰遇新增public-hint红例/源码变动而1FAIL，不能冒冻结通过，原失败仍保留。
+- 第一真实Flash-high run 18a2d169-7a1a-4c24-be4d-5f6da811f101已完整回读：AGY_READY_20261029，configured/observed均gemini-3.8-flash-high，native证据匹配、completed、cleanup confirmed、partial=false/hasMore=false。真实project仍来自parent header的/home/timidly/agents，不是working_directory工具尝试的/tmp；无观察到的工具步骤，不称已证/tmp隔离或全部文件零变化。公开回执无独立exit code字段，不从cleanup补exit0。
+- 同Worker两次后续提交在新run前Native metadata exit1（后来可见固定hint=native-unclassified-text）失败，旧run仍completed且口令请求未发送；未重绑、未复制/重跑原业务。单独explicit-default目录成功不等于Worker目录或续聊通过。
+- 另已确证Worker目录查询误用部署默认账号：Host schema默认lxy，真实Worker明确绑定default；Worker models却把未scoped的this.options用于身份及目录两处，造成假“账号已变更”。父仅沿生产reader私下比较当前default的opaque binding与旧记录，相同，0子进程，不输出digest/账号值或材料，也不称零auth IO。修复仅按worker.preference生成scopedConfig并传两处，不改部署默认、Worker旧binding、角色或历史，不放宽真实来源变化门禁。
+- [Tool/Remote正反账号组合4项先红](../.cache/agy-worker-account-r19-red.json)均错误ACCOUNT_CHANGED，另52项为筛选跳过；修后[4文件99PASS](../.cache/agy-worker-account-r19-green.json)，两种部署/Worker反向组合均只查固定来源，原binding与deployment未改，0job/Native prompt。只读独审逐点核三行与四例通过，未把审查冒测试执行。
+- [隔离Host构建后备份3个Host产物](../.cache/agy-worker-account-deploy-r19/proof.json)再原子更新/仅该entry正常热载，未改Client、部署账号默认、Native凭据或旧binding。正式同一agy-6 Worker.models已成功，未重新选择/配置/创建替代Worker。随后条件followup取得新run b951b618-1970-4087-a417-fbb79d30a711，完整公开正文为合成验收口令AGY_R18_LIME_7319；configured/observed同Flash-high且Native匹配、completed/cleanup confirmed/partial=false/hasMore=false。已按该新run回读并收取对应job，不拿旧READY正文充作续聊结果。该观测证明修后两条入口当前可用，不倒填之前Native exit1具体根因或历史exit0。
+- 本补丁后的首份完整运行断言 **5634PASS/0FAIL/17SKIP**，但有1个未处理cleanup Promise使最终exit1，不能称全绿：[原报告](../.cache/conservative-close-r19-frozen-tests.json)。栈定位Pi/OMP合成环境测试finally未await launch.cleanup，afterEach移除fixture root后异步seal树才lstat而ENOENT；父仅补该测试await，不改产品seal/忽略错误或增deadline，[两环境关联例2PASS/70筛选SKIP](../.cache/conservative-close-r19-cleanup-fixture.json)，再冻结全部808输入重跑全量。旧5630项冻结只覆盖补丁前，不替代新验收。最终[新冻结报告](../.cache/conservative-close-r19b-frozen-tests.json)实际 **5634PASS/0FAIL/17SKIP、250 suites、exit0，无未处理错误**；[808个明确代码/测试/构建输入](../.cache/conservative-close-r19b-code-inputs.json)复核前后全同，不冒文档/外部profile冻结。Host/Client typecheck及38项OpenSpec strict、diff通过；保留既有archive重叠提示，不据strict通过归档未完成change。
+- 两份公开研究稿及中英README/usage经只读独审未见真凭据/个人业务正文或导入/全部CLI实机已成的越界宣称；已修英文旧版本说明、中文旧CLI数字、历史段落时态并泛化研究稿本机路径。仅明确候选198文件做有限凭据literal扫描，未命中；不是所有secret格式或整个工作区无秘密的证明。实际profile备份/恢复回执/未完草稿均继续ignored/private，不入Git或包。
+- 本轮热更新后宿主PID363444、startTicks4223119与boot_id前后一致，Client字节不变，未重启DSH。既有GUI URL无登录cookie的独立GET为401，未绕认证、未新开服务器，也未声称做了浏览器视觉验收；实际正式Tool/Native Session链已完成上述Worker目录、首轮及续聊核验。
+- 当前包名/0.8.2不变。按用户明确收口授权仅整理本会话相关成果至既有分支，具体commit/远端SHA以最终Git回执核对，不发布PR/tag/Release/npm。原auth供应商导入/runtime/tools/UI及未验平台继续保留待办，store合成能力不冒真实导入；完整Gemini文档审读也未以小口令冒验收。
+
+## 2026-10-29 Round17–18：按人工指令保守收口，优先恢复AGY（进行中）
+
+- 最新人工要求为继续工作、可以保守收口并修复AGY。父保留同分支与HEAD、空index和单写者，冻结已验证基础，暂停扩展多账号供应商adapter/runtime/tools/UI；旧扩展需求保留未勾，不能称原大目标全已实现。原Round16 MiniMax 12行UNSUPPORTED stub及55项草稿测试（7FAIL/48自然PASS）已整份迁入既有ignored[草稿目录](../.cache/native-auth-minimax-draft-r16/README.md)，原/目标SHA一致，非测试发现后缀，未删、未skip/削弱正例，不冒2.2实现。
+- 正式models查询首先立即遇持久global cleanup隔离。父核唯一旧debt与AGY Worker baf4036b-8e22-4256-8706-8ae9fa178d1b / run 42fe591f-3cf3-4bb8-ac84-6ef13a2b47d8的local terminal cleanup失败同毫秒关联；真实Linux kernel btime证明10/28完整重启晚于10/26该local POSIX范围。并核193份worker全终态、全局active/queued=0、无pending followups，未运行原业务、未动独立AGY/MCP。原旧exit3/quota/uncertain/cleanup未确认保留，不补历史exit0。
+- 本个案经只读独审评估后由父执行人工维护，不是policy1按mtime自动过期：精确marker bytes/SHA、owner/mode/nlink与dev/ino、nofollow复核，先双intent，再同FS唯一私有目录保留原inode归档，后验与receipt。独审指出首次rename前未明确fsync新目录父级；父在热载前补同步及nofollow ENOENT复查，另留[补充记录](../.cache/agy-cleanup-recovery-r18/post-archive-sync.json)，不冒称该额外顺序检查先于原rename。正常overlay只给CLI Worker显式保留原默认graceMs，重新构造旧memory latch；DSH PID363444不变，原causal worker/events SHA不变，无旧prompt重投。
+- 恢复准入后，正式default/lxy目录都进入Native并返回exit1，不再是cleanup gate；尚未证明登录、额度或具体Native根因。10/28 AGY程序已更新：当前裸ELF SHA `1c9102d0a36194d57f6b4a66249217ece0bf563e108bcdd1046b81c5b6d6004c`，不是旧`403491…`；公开1.4.9记录不证明这份binary的语义版本，也无证据改models命令或放宽TSV parser。
+- 新增有限词表安全诊断先[9FAIL/34PASS](../.cache/agy-diagnostic-r18-red.json)，修后[5文件148PASS](../.cache/agy-diagnostic-r18-green.json)；仅固定类别，不回显/持久化任意Native输出、路径、argv或账号内容，不据text hint判断登录/余额，取消和cleanup优先级保持。第一隔离preview构建通过；只备份并原子替换[5个Host产物](../.cache/agy-diagnostic-deploy-r18/proof.json)，避免原nlink2文件的CAS/备份被原位改写，Client SHA完全不变。当时后续unknown/empty候选仍在构建/实机验证，不能把首次无hint的exit1当新代码已加载证明；后续独审另定位公开投影漏传hint，不能反过来把无hint定因成旧模块。最新实际结果见Round19。
+- 后续独审发现[公开错误投影](../src/host/public-operation-error.ts)重建MetadataCaptureError时漏传hint：实际withPublicToolErrors链[先1FAIL/15PASS](../.cache/agy-public-hint-r18-red.json)，改为own-data descriptor读取且交构造器闭集二次净化，关联[4文件76PASS](../.cache/agy-public-hint-r18-green.json)；补宽词表但仍仅固定类别后[2文件66PASS](../.cache/agy-hint-r18-latest-green.json)。未知/accessor/cause/private marker不透传，实际正式exit1已可见固定unclassified hint。这也证明此前“无hint”不能据以判断新Host代码未加载或Native故障原因。
+- 获准最终提交前的真正全量首跑[250 suites / 5627项](../.cache/conservative-close-r18-tests.json)：**5598PASS、12FAIL、17SKIP**，不是全绿。已逐点定位8项fixture受parent umask077影响的错误初始权限假设、3项旧public错误/取消断言，以及1项模拟Pi SIGTERM/EOF生命周期竞态待验证；保留原报告，不降低真实保护断言或把Native模拟冒实机。当时修复/重验仍在进行，尚未提交推送或声明AGY闭环；后续结果见Round19，原失败报告保留。
+
+## 2026-10-26–27 Round15–16：OAuth store私有格式切片（合成已实现，导入未完成）
+
+- [store](../src/host/native-auth-store.ts)新增第三种oauth-credential及私有policy，精确R0/A0域分离；旧native/API两字段HMAC和schema1原import/manage回执保持。schema1验证后仅内存归类legacy-v1，不从digest猜kind；首个成功OAuth发布才升registry2，旧manifest/receipt不重写，未知/缺policy或单侧降级拒绝。[说明](native-auth-store.md)保留Native/源码证据边界。
+- [53项synthetic测试](../tests/native-auth-oauth-store.test.ts)含独立手写legacy fixtures、policy/route/mode/pin、cold replay、异步disable/head、构造器品牌cleanup优先、own-data提前ownership与detached view/逐buffer擦除/lease释放。初次24FAIL/7PASS；lifecycle先6FAIL/2PASS/31筛选SKIP；detach先3FAIL/48筛选SKIP，均保留对应原报告，不冒真实AGY格式或Native进程验证。
+- 最后[7文件211PASS/0FAIL/0SKIP](../.cache/auth-oauth-store-r15-regression4.json)，实际ES2023 scoped strict/noEmit、Host/Client noEmit、auth strict与diff通过；没有本切片前后完整输入manifest，不称全仓冻结。中途误用ES2022拉入已有findLast后exit2，`&&`后Host/Client未执行；改项目实际ES2023/lib重验，未改业务findLast。旧206PASS报告不覆盖后续detach修复。
+- 2.1/2.2及真实导入仍未勾，17项仅2旧完成；store不是source授权、Native格式/保护证明、远端身份/授权或刷新组。该切片未真实导入/模型调用或热装；后续本轮收口也不为清MiniMax草稿红测继续扩大实现。
+
+## 2026-10-26 Round14：AGY 鉴权方案确认与受限元数据守卫（2.1切片）
+
+- 用户已选择AGY首版新增OAuth凭据固定模式，并明确要求按既有目标直接实施，不反复询问内部文档名。父作为唯一写者同步[提案/设计/规格/17项任务](../openspec/changes/add-native-auth-profiles/tasks.md)：refresh-backed固定精确R0，R0不变且独立原生检查通过时允许正常A/expiry更新；只有已证原生access-only才独立固定A0。轮换/丢失/跨mode不能重新pin、覆盖同ID或搬旧conversation，需明确新profile/Worker；首次目标核验也可能失败。pin不是远端账号、当前A主体、A/R同grant或可用授权证明，不能用邮箱/JWT/目录成功补证；没有新userinfo/额度接口、没有迁移legacy default/lxy。规划两位只读独审发现的“泛称全部OAuth”范围措辞已限定为oauth-credential，未把新合同推广到MiniMax/Codex已证principal模式。
+- 实际代码仅[严格入口](../src/host/native-auth-snapshot.ts)与[Host supervisor](../src/host/native-auth-kernel.ts)的通用metadata基础：spawn/await前复制选择，regular内容文件+元数据叶项合计≤16并拒重复/前缀，absent只认held安全parent下leaf ENOENT；settings别名的原始字节/type/owner/nlink与同guard已选regular target共同守护，元数据自己的祖先/相关名进入同一raw watch/CHECK/SEAL。输出bytes不含别名/缺失叶项，不递归HOME、不自动读默认token；observation非空metadata明确UNSUPPORTED。C/IPC/ABI、store与0.8.2未改，具体lxy授权及凭据/保护投影仍归未实现adapter。
+- [新增metadata测试](../tests/native-auth-metadata.test.ts)使用真实自有C helper及仓内保留synthetic fixtures。旧接口不支持新增选择时[首跑](../.cache/auth-agy-metadata-r14-red.json) **26项21FAIL/5PASS**，接入后26PASS；这证明新能力缺口，不冒称旧调用已发生生产凭据泄漏。补hardlinked alias、writable parent/unsafe target、spawn期间root/files/path/limit/metadata引用修改和实际READY后ABA后，关联[第二报告](../.cache/auth-agy-metadata-r14-regression2.json) **6文件156PASS**，scoped/Host/Client types及strict/diff通过。
+- 独审发现readlink默认UTF8会将raw FF与合法U+FFFD根名混同；父新增真实字节正反例[先红](../.cache/auth-agy-metadata-r14-link-bytes-red.json) **1PASS/1FAIL/31筛选SKIP**，错误返回SYNTHETIC_UNICODE_OK而非拒绝。现初次与后续均readlink buffer、expected绝对/唯一规范相对目标bytes.equals，保留合法Unicode支持；[33项全绿](../.cache/auth-agy-metadata-r14-green3.json)。原审查者限定复读确认该阻断关闭，未把其只读意见冒执行测试。
+- 父最终[冻结切片报告](../.cache/auth-agy-metadata-r14-final.json) **6文件158PASS/0FAIL/0SKIP**（metadata33/kernel59/store21/files17/snapshot20/build8）；scoped strict/noEmit、Host/Client noEmit、auth change严格校验、diff均通过。[8个明确输入hash](../.cache/auth-agy-metadata-r14-inputs.json)前后相同，只是列出的切片输入，不是全仓/最终验收冻结。旧ABA、unknown frames/overflow、取消/真实close、store seal-before-publish、构建/ABI与ASan/UBSan均随关联组重验。
+- 仍未覆盖/未完成：alias不同UID负例、symlink.kind/target各字段单独spawn变更反例、metadata+store晚Native verifier及其owned cleanup完整闭环；旧相邻测试不能冒这些通过。OAuth第三kind/私有版本化身份、AGY完整Native格式/读取/刷新/保存/必要保护、lxy专属授权、其他adapter和runtime/UI/tools仍待，2.1未勾，合计仍 **2/17完成、15待办**。未读真实鉴权内容、未执行vendor CLI/HTTP/model或原历史业务，未构建完整包/热装/重启DSH、未stage/commit/push或发布；本轮没有更新已装包，先前Round12部署证明不能用作此切片部署验收。总目标保持活动。
+
+## 2026-10-25–26 全保留 CLI Worker 失败盘点与首批修复（进行中）
+
+- 用户再次要求所有使用CLI Worker的失败案例逐项处理，而非只处理所举样本。活动[change](../openspec/changes/fix-worker-history-repro-gaps/tasks.md)保留原始历史只读、零跨父续写/解归档/业务重跑。初查14家族已扩成完整采样台账：758/758 rawV4、271205 concatZSTD frames、577783 rows、解析读取缺口0；998去重call中96真正工具失败（55start/31models/9followup/1status），90次成功状态查询返回failed不重复计失败调用。289job中45failed/8killed；fork重复保留origin不双计。
+- 插件独立截面189worker/189events/280raw共290run，237completed/44failed/8interrupted/1uncertain；53非成功run全部与真实job回执join，和DSH53非成功job为同层关联而非额外53根因。无orphan或completed却raw ERROR；60legacy无历史配置、非成功其中9，cleanup/exit缺证不伪造。26个AGY非成功run仍有本轮DONE正文。撤回intent留存不足单列unknown；无receipt不等于未创建Worker。原始个人日志/论文不入仓库或包；完整最小元数据在忽略的[私有台账](../.cache/worker-history-audit-20261025/failure-ledger-r2.json)，当前全部问题已解决=false。
+- 首批AGY当前生产runner的脱敏TDD：[新增回归](../tests/agy-history-outcomes.test.ts)先 **4FAIL/16PASS**：system_message漏识别使合法摘要冲突不能进入uncertain、普通成功多未知诊断、error_message DONE被SUCCESS洗白、换模型后三轮旧quota结构仍误分类。只把system_message作已识别消息生命周期；error_message保持错误证据、未知类型和错误/非0/缺终态/取消/清理条件不豁免。修后连同既有primary runners与旧outcome组 **3文件120PASS/0FAIL**；Host/Client typecheck、此change strict及diff通过。随后新增退出证据/额度错误来源反例与实现的验证另记，不能用120项冒后续状态。
+- 准入诊断真实Service/Runtime负例先 **2FAIL/43PASS**：新Worker在首次账号准入超时、未落binding后仍称“历史任务缺账号”；无Native会话且无准入证据也被猜成旧历史。新增只读分层提示，Tool/Remote与Runtime共用；pending、现代未完成、无充分证据、真正旧Native会话分开，身份门禁不放松。修后关联模型控制45+并发28+结果19+Host准入7，**4文件99PASS**；零新catalog/prompt/binding，旧run/账号不被收养。后续cold restore/更多队列/全文关联与新类型检查仍按清单继续。
+- 原用户AGY纸面产物已核验，不叫论文失败；同Native会话Argon无正文quota后Flash产生新正文仍携原样旧reset文案，是强累计摘要候选，不等于已核余额。保留已有正文、原quota与真实read_file失败，不把所有quota错误洗白；历史原生退出码未知，内存peer模拟0/非0均显式注明，不改历史failed。
+- 与本次故障独立：父对native-auth1.2另跑 **109PASS/0FAIL/0SKIP**、Host/Client types、authchange strict/diff与804 frozen inputs核对；不是供应商实际导入或本change的Native验收。[独立报告](../.cache/auth-kernel-parent-20261025-r1.json)与[输入证明](../.cache/auth-kernel-parent-20261025-r1.json.inputs.json)。原写者收尾曾因编排模型服务overload失败，真实错误核实后同ID只读交接并释放，不把该服务错误与AGY stream错误混为一谈。
+- 后续追加退出来源3个真红例，并经独立窄审发现真outer `io.close()`仍会用自然exit3通用错误覆盖先前Nativequota；加真实transport+模拟owned子进程退出3反例及活动native绑定缺失反例，实际2FAIL后修复。仅AGY保留已分类错误附在健康失败之后，assertHealthy/cleanup和其他CLI脱敏不变。最终包含相关Native transport的149项通过，cold recovery再47项通过；不是把假IO绿测冒端到端已通。
+- 父完整关联候选最终 **30文件974总项，973PASS/0FAIL/1既有skip**，Host/Client types、5个change strict及diff、808 frozen inputs核对通过：[r2报告](../.cache/worker-history-parent-20261025-r2.json)。前r1同样973测试通过但doc/design EOF空行使diff gate失败，已修并保留旧报告、用新r2完整重验，不掩盖门禁失败。空闲验证后隔离包SHA359f3cb1cfabdcd561e59a1521536a230a22a0dab31be1e286c5b32aa7d1bbb7（18,315,505bytes/934files）正式备份热装，725lib产物字节匹配；839既有历史文件0变化、无关配置/并发12保留、PID38589/ticks761921不变。Native Chelper owner-executable与全部包资产hash实核，profile仅注释line2激活，无重启或发布。
+- 正式CLI入口新Worker `agy-4`做预定Argon→Flash两轮：Argon原生ERROR/exit3/零正文；同Native会话Flash实际返回新标记，本轮user/system/agent全DONE、**真实exit0**，却仍逐字重复原Argon的14h5m46s quota。新Worker正确保留正文、原summary与Worker uncertain，Host job按SDK兼容failed，不据此称Flash当前无额度或成功。再新Worker `agy-5` fresh Flash原生read_file/write_file均DONE、Native SUCCESS/Worker completed/cleanup confirmed；[实际产物](../.cache/worker-history-native-20261025-r1/artifact.txt)39bytes与批准input逐字节相同，SHA9a9833e21bb354f36ffede5e5823a48a09a9d06cbc89031d0f625a80df9df6c3。三run的run-specific结果已全读hasMore=false、所有job收齐，见[私有实机证明](../.cache/worker-history-audit-20261025/native-acceptance-r1.json)。没有重跑任何原论文/外父任务，未查余额。
+- 首批包在当前URL刷新GUI已实际截图核对：新标记、待核实和quota来源说明可见、无page/panel overflow。但Native内部仍显示红“Failed / This turn failed / CLI_RUN_FAILED”，因此5.3不能勾全。随后源码修复见下节；未部署的新代码不能冒称现GUI已更新。没有Git暂存提交推送、版本/发布动作，首批已部署不代表149观测记录全部解决。
+
+### 2026-10-26 Round11：公开错误边界与Codex连续目录（已空闲热装，逐例尚未收齐）
+
+- [公开异常投影](../src/host/public-operation-error.ts)只包装注册工具/Remote的最终拒绝，不改内部abort identity、不重试。真实signal且同一reason才归取消；未知对象、Error Proxy/revoked、访问器/toString/cause不求值。普通Error只复制自身data message到新Error，不承诺所有普通message均已去秘密。构造器自有WeakSet识别[cleanup错误](../src/host/process.ts)，覆盖实际MiniMax/OpenCode子类，优先于同时取消；投递未确认仍不可自动重发。只读独审曾发现Remote的前置instanceof及真实cleanup子类被漏掉，实际3红后修；独审复读确认两项阻断关闭，不是全库getter安全认证。
+- 该公开边界阶段报告[r4](../.cache/worker-history-audit-20261025/public-boundary-green-r4.json) **9文件365PASS/0FAIL/1既有SKIP**，Host/Client types、strict/diff通过；真实注册MiniMax preabort/同CLI锁等待、未知getter、RemoteProxy/revoked、真实OpenCode cleanup子类、正常回执晚取消均覆盖。原MiniMax旧`[object Object]`相邻turn/end只证user-kind中止；具体历史serializer未留存，不归因quota/auth、30分钟timeout或零Worker。
+- [Native流](../src/host/harness-conversation-stream.ts)对AGY/Cursor uncertain新增独立`CLI_RESULT_UNCERTAIN`及明确“结果待核实/SDK Failed兼容显示/不要自动重试”说明，仍error finish，保留正文/原错误/cleanup；不是success/abort替代或Core改动。SDK内置Failed标题无法由本插件更名，源码合成已覆盖真实SDK AgentLoop与冷打开。后续本节已有新流GUI核验，4.4按明确兼容边界完成；5.3的全部逐例结论仍待收齐，不修改旧turn。
+- Codex已先记录连续目录9红，再修[私有稳定来源](../src/host/cli-account-binding.ts)、[封闭目录原因](../src/host/codex-models.ts)和[外层错误路径来源复核](../src/host/authorized-catalog.ts)。同root/provider/default route/principal可正常刷新access/refresh/expiry，不比较token文本/mtime判换号；真实root/provider/principal改变不把A的能力与B的scope拼接。unknown/未分类拒绝/远端空/能力交集空/真实quota/auth分开，均不使用旧显示缓存授权；私有sourceIdentity不返回目录或错误，不改历史binding格式。
+- 外层新增scope-unknown/quota/auth三种“目录先报错且绑定已变化”实际红例；稳定绑定保留原reason，真实cancel优先，cleanup未确认不新增复核查询，未知Proxy/其他CLI合同不变。首轮[Codex候选](../.cache/worker-history-audit-20261025/codex-green-r1.json) **4文件154PASS**及types/strict/diff通过；随后增补连续HTTP异常与精确scope变化，完整冻结复验另记，不拿154项冒最新全部验证。正式models→start三处fresh准入变unknown均零Worker/job/业务prompt；第三处之前已校验的setup允许保留，不声称各处均零设定写。四次同来源合法scope精确7项，未复现第二次必空，原历史具体source/scope/cwd/nativeVersion缺证仍unknown。没有真实账号文件、CLI或HTTP/model执行。
+- Codex独立只读审查未发现授权放宽或阻断项，范围/非阻断建议见[私有审查回执](../.cache/worker-history-audit-20261025/codex-review-r1.md)，审查者没有运行测试。父采纳reason闭集建议，`constructor/__proto__/toString`三红后加own-key校验；明确重读binding失败保留真实绑定错误、不伪称变化或重试第三次，新增重读取消和cleanupFalse零post-source/零scope probe。两次同source fake-fetch覆盖429/500/格式坏/传输失败/期限/quota/401/403，只有确认的usage拒绝才能称quota/auth；分层模拟不是远端余额证明。
+- 新冻结候选前r3 **1351PASS/4FAIL/1既有SKIP**，4项全为OpenCode-v2合成测试等待owned input的默认1秒观测先到期；不作为候选通过。保留失败报告，测试夹具新增实际HTTP admission事件及“未准入已终态”提前失败，替代固定1秒轮询；原权限/foreign input/停止/清理断言不减，不改生产超时、不跳过测试。随后[窄组](../.cache/worker-history-audit-20261025/codex-opencode-green-r2.json) **5文件136PASS**（Codex27/外层28/HTTP36/OpenCode执行44/服务集成1），Host/Client types与diff通过。新完整冻结验证另见下一项，不把窄组或重跑变绿冒全部完成。
+- 最终冻结[r4报告](../.cache/worker-history-parent-20261025-r4.json) **40文件1365总项，1364PASS/0FAIL/1既有SKIP**，810 inputs、Host/Client types、5change strict与diff通过；源码及build/安装guard摘要锁定。[新隔离包证明](../.cache/worker-history-public-codex-20261026-r1-package/build-proof.json) archive SHA898af0addaedbdf65b37488a39deb1fa63ab842693e8c1bd49008a3bd3d06290，18,325,193bytes/937files，728lib核对；本地包名/0.8.2不变。先观察到其他任务活动而未强停，后global active/queued均0才通过idle gate、官方备份热装；852既有历史文件0变化、并发12/其他profile设置保留、PID38589/ticks761921不变、helper0700，只有既有注释line2触发热激活。当前zai/glm-5.3等后续用户设置没有回滚，见[安装](../.cache/install-backups/worker-history-public-codex-20261026-r1/installation-proof.json)与[激活证明](../.cache/install-backups/worker-history-public-codex-20261026-r1/activation-proof.json)。
+- 热装后正式入口在本父原最小Worker `agy-4`发送明确新一轮标记；先回原project再派遣、结束后回本repo，没有改Worker project或借外父会话。run `ef48bc94-386f-4143-81f3-12bcea7150da`原生观察Flash-high、同NativeID，user/system/agent三步骤全DONE、真实exit0、零tool step，返回30字符新正文；仍重复原14h5m46s quota，Worker保持uncertain/partial、Host job兼容failed、cleanup confirmed。公开结果hasMore=false全读且job已收，当前quota未查询；不能宣称生成失败、当前无额度或已证成功。
+- [新GUI截图](../.cache/gui-worker-history-public-20261026-r1/worker-history.png)独立读图：新回复下实际显示`CLI_RESULT_UNCERTAIN`及“结果待核实：当前SDK原生对话可能以Failed兼容显示，不代表业务失败已证或任务成功”。红`This turn failed`/`Failed`仍在，是明确保留的SDK限制；上方旧turn仍为`CLI_RUN_FAILED`，没有追改。现URL刷新、647px侧栏无溢出、新标记/原quota来源均可见，不把这叫消除所有红失败标题。[新实机证明](../.cache/worker-history-audit-20261025/native-public-acceptance-r1.json)核原events前缀未变，852基线仅本次自身Worker和append events发生预期变化，其他留存文件不变。
+- 最新[逐例台账r5](../.cache/worker-history-audit-20261025/failure-ledger-r5.json)承接r4两个精确历史case修复证据并附实际部署/新流证明：89call仍pending、5expected guard、2current-fixed但历史leaf/scope未知；53run保留8缺证/25当前parser保留失败未闭/8停止及留存边界/5pending/7仅冲突分类验证且历史exit未知。采样截止不扩，3轮旧canary与本次新turn另记，allIssuesResolved仍false。4.2精确same-Worker新run清旧error回归与剩余案例、5.3全部逐例结论、鉴权15项及原总目标继续，未暂存/提交/推送/发版。
+
+### 2026-10-26 Round12：同Worker新轮隔离与剩余家族逐例复读
+
+- 父仍为唯一写者，原两位审查Agent只读复核余89 failed calls的13+73+3精确集合；不修改/解归档/续写原会话，不新跑CLI/model或历史业务。家族结果见[关联验证记录](../openspec/changes/fix-worker-history-repro-gaps/family-verification-r12.md)；逐case独审尚待父核集合后合并私有新台账，不拿投递成功或家族摘要算全部case已审。
+- [原生Runtime](../tests/native-runtime.test.ts)新增2项same-Worker ERROR/UNCERTAIN→new queued清旧error/lastResult/observedModel→新成功；旧run按runId仍有原正文/error/cleanup与相同事件，账号/NativeID/Worker数量不变。两例当前生产实现直接通过，**无生产代码改动**，不是发现并修复了新的错误隔离bug。[12文件279PASS](../.cache/worker-history-audit-20261025/family-green-r1.json)、0失败/跳过，Host/Client types、strict/diff、810 frozen inputs核对通过。
+- 独审核精确r4 report发现AGY catalog-preflight、MiniMax native、Codex account、runtime-isolation四suite不在原1364项内，不能凭源码存在冒本轮已跑。父随后补这4项与OpenCode-v2/ACPpermission：[6文件214PASS](../.cache/worker-history-audit-20261025/family-supplement-green-r1.json)，0失败/跳过；分别11/77/9/32/81/4。组间与1364存在重叠，不相加；源码/旧部署未变，本轮测试和文档不触发重复热装。
+- 父重新结构化读53非成功run的全部43份保留raw，10份缺raw显式留缺口；34份旧回放的raw hash全部仍一致。[逐run形状复核](../.cache/worker-history-audit-20261025/run-shape-review-r12.json)只计原生type/state/error载体和公开工具状态，零记录内命令执行；未知exit不从cleanup补成0。对旧SUCCESS但tool/error_message失败、原生EOF/quota、Host capacity、stop等各例保留原终态与正文，不改为成功。
+- 原Kimi failed run仅3条raw：ACP握手AgentInfo为**2.3.0**，继而RPC -32000 Authentication required；未观察模型，不能猜有效default/source或要求用户重登。既有2.2源码readiness研究不是本次2.3.0二进制一致性/根因证明，原Kimi实机闭环仍待。MiniMax原read/write被拒明确目标outside-workspace需确认，不是额度问题或已证真人点拒；正规builtin once approval/正确project路径继续，不把安全拒绝叫所有工具已打通。
+- Cursor两个Shell权限probe和一个read缺rawOutput的UNKNOWN逐run复读，保留实际拒绝/uncertain与部分正文；旧工具completed与deny冲突已在当前代码修复，不重复改旧turn。OpenCode两次version失败与后续service-unavailable分开：固定原生banner解析已有修复及真实进入下一门禁，第一次generic错误未留stdout仍unknown；原生v2服务/模型未因合成通过冒实机完成。
+- 两位原审查者已交付逐case机器结论，父核13+73+3的完整集合、原callId及row/seq相等；[新台账r6](../.cache/worker-history-audit-20261025/failure-ledger-r6.json) **96/96失败调用、53/53非成功run均有contextReview，pending_case_verification=0**，历史字段逐数据对比不变。73例中V35/V+H38指当前合同/历史缺证分层，不是历史原因全部证明；13例也保留4个叶因缺证与取消owner未知。`allRetainedCasesContextReviewed=true`与`allIssuesResolved=false`同时成立。13例asmgr审查转录保留lossy警告（cwd/job registered/settled未投影），只用确切job_output正文14条机器行，不拿该转录冒原始完整事件；全盘job证据仍由原raw审计覆盖。
+- 独审另指出MiniMax identity内部创建安全DOMException、不同于signal.reason时的公开展示缺口。父经正式start→实际assert/request（注入fake fetch）**2真红**，确实误成CLI_OPERATION_FAILED；现用module-private取消witness，既有DOMException/控制身份不变，公开边界只认该witness，不认同名AbortError/Proxy。窄组[6文件326PASS](../.cache/worker-history-audit-20261025/minimax-identity-public-green-r1.json)、types/strict/diff通过，并补内部3秒deadline仍为身份unavailable的反例；原86bd历史取消owner/cleanup仍unknown，不倒填用户动作。新小修尚待最终候选安装，不能用上一包热装证明已部署。
+- 全新47文件冻结r5为 **1680PASS/1FAIL/1既有SKIP**，唯一失败是严格源快照ancestor-ABA返回generic VALIDATION_FAILED而非SOURCE_CHANGED；没有成功发布或安全放行。父用真实自有helper的实际ERROR CHANGED chunk在stdout处理前注入stdin EPIPE，**一条确定性红例**复现generic transport抢占具体源证据。当前修正按私有origin区分transport、helper、protocol、explicit、cleanup，并保留wakeup错误身份，在原bounded actual-close之后最终归因；协议坏尾/重复终态/SEALED后ERROR不能冒source proof，取消、callback真实错误及CLEANUP_UNCONFIRMED优先。不改C/ABI、不加sleep/retry、不从EPIPE/未知IO猜SOURCE_CHANGED。独审补边界后，r6集成明确主动取消、不计通过；新[5文件123PASS](../.cache/worker-history-audit-20261025/auth-helper-order-green-r2.json)、types/auth strict/diff通过（kernel57、store21、files17、snapshot20、build8）。最新全冻结/独审/部署还须后续收齐，原source/classification缺证不被本夹具补造。
+
+### Round12 最终冻结、部署与 GUI（实际完成边界）
+
+- 最后独审又给出同步callback先排EPIPE微任务后抛BUSY/SOURCE_CHANGED的窗口，父**2真红**确认内层catch会丢callback原因；只补同一wakeup与独立callback异常的身份区分，保持既有origin优先/失败latch，独审无新增阻断。最终[47文件报告r7](../.cache/worker-history-parent-20261025-r7.json) **1697PASS/0FAIL/1既有SKIP**、Host/Client types、5个change strict及diff通过，810输入前后冻结相等；kernel已59项。旧r5失败与主动取消r6均保留，不反写成功。
+- 两个隔离候选输出完全相同的0.8.2包：SHA `21ec205aeda5f2d855805723021105eccf6b5602e8dabda0707e1db2c48a698d`，18,326,954 bytes、937 files；301源码、519构建输入、810验证输入冻结。Host `dac3c1efc8a2d46cf34c8d5769bfb6968e587073bec771251eb14db20bacf56c`，Client仍 `4e48e810fc0ecab2deb38756a1a24306e60fbcff436fd43a4cc01cc40bbec364`；helper700及原C/ELF hash不变。无bump/发布，本父没有新增vendor Native/model调用。
+- r2事务在备份后第二次idle检查发现别的Worker启动，**正式安装前退出**，现网/配置hash未变，备份保留；未stop对方或绕门禁。其自然结束且正式global/parent active/queued全0、持久Worker也0后，新r3事务重建同bytes候选并正常安装，728 lib逐byte核对，**安装时854份历史0变化**、无关依赖/并发12/PID38589和startTicks761921不变。备份与[安装回执](../.cache/install-backups/worker-history-review-20261026-r3/installation-proof.json)均保留。
+- 激活仅改既有profile注释第2行。但空闲检查是瞬时快照，不是排他maintenance lease：另一个原父在该快照后接纳了新run，故激活后的“全历史零delta”严格检查**实际失败，不能记绿**。父未重写/停止/续聊其任务；单独[归因证明](../.cache/install-backups/worker-history-review-20261026-r3/activation-proof-with-peer-run.json)核其原8176条、2,284,016 bytes事件前缀hash完整，其他852份原文件逐byte不变；只有该owner自己的latest Worker、追加events及1份新raw，后来uncertain/cleanup confirmed。账户/无关profile配置和并发均未改；不宣称整个激活区间持续空闲、总历史0delta或把该peer run借作本父Native验收。这个时间窗限制明确保留，不再触碰profile制造重复更新。
+- 真实刷新现有`http://127.0.0.1:61060`并只读打开本父agy-4，[GUI回执](../.cache/gui-worker-history-review-20261026-r3/proof.json)和[已独立读图](../.cache/gui-worker-history-review-20261026-r3/worker-history.png)确认647px、0横溢出。图中下轮同时有`CLI_RESULT_UNCERTAIN`及“当前SDK原生对话可能以Failed兼容显示，不代表业务失败已证或任务成功”，并说明quota是CLI会话汇总、并非当前余额查询；**红This turn failed/Failed仍是SDK兼容限制**。旧上轮CLI_RUN_FAILED没有改写。只是重新显示已验收R11本轮正文，不是新增模型调用，也未把本轮取消展示合成冒成真实取消实机。
+- [最终台账r7](../.cache/worker-history-audit-20261025/failure-ledger-r7.json)SHA `e25bd0e219f606f48723dfed31342c8d7585c6ae3a453087e0d53aefbcf73440`关联确切当前包/GUI/独审/逐case证据：96调用+53run已审阅，`allIssuesResolved=false`、历史身份/timeout阶段/exit/retention缺口仍列明。原总目标鉴权adapter/UI15项、Kimi/OpenCode Native、builtin once approval与最终所有权Git验收仍待；本change不自动归档，总goal不完结。
+
+## 2026-10-25–26 native-auth 1.2：受管 Linux 严格快照后端
+
+- 本段只记录任务1.2，不汇总其他CLI：新增[自有C companion](../src/host/native-auth-guard.c)、[私有Host supervisor/closed guard](../src/host/native-auth-kernel.ts)和[构建期资产脚本](../scripts/build-native-auth-guard.mjs)，更新[快照入口](../src/host/native-auth-snapshot.ts)与正式/preview构建钩子。1.1 store双revision/最终root/CAS/request合同不变；MiniMax2.2、其他adapter、runtime、UI、tools尚未接入。无用户原生auth/config/history、HTTP、Native CLI/model调用，无全应用build/正式pack/install/Git写，未动父candidate/install guards或冻结Cursor证据。
+- 严格机制：C独占新open-description read leases（不是dup/advisory锁），raw inotify同步drain及overflow/unknown/ignored拒绝，祖先相关子名过滤与FD/path/owner/mode核验。Node在READY后有界读取并经CHECK确认读窗口，再调用受保护callback；目标verify末尾必须await sticky且幂等seal，收到SEALED并确认实际helper退出0后才允许return identity/publish。晚verify忽略取消也不能把旧失败升级为成功；不把C退出当callback-owned进程cleanup。读lease可能短暂协调原生写者，break立即释放；SEAL是采样线性化点，不是跨root registry事务，不承诺独立grant。
+- 实际TDD：缺builder时suite failed/0行为测试；真实helper已编译而旧wrapper仍拒绝时 **6FAIL/2PASS**；最初8PASS，再33PASS。父只读复审指出same-inode重复wd first-filter遗漏，新增production负例实际 **1FAIL/33筛选跳过**，改同wd所有filter并集后绿，未减反例或sleep伪造drain。完整scoped类型曾发现两处fixture nullable stdin type-query，改NonNullable后重验。
+- 最终定向组 **5文件109PASS、0FAIL/0SKIP**：既有store21+snapshot20+files17，新增kernel43+build8。覆盖实际truncate A→B→A、原inode/ancestor ABA、atomic replacement、已有write FD、FD关闭后MAP_SHARED及mprotect、真实raw queue overflow、nonce/seq/frames/数字上限、父死/EOF/取消/超时、guard读窗丢失零callback、私密marker、真实store seal后publish与late verify零registry、direct-cache sibling staging、hardlinked code/tamper及资产错误。
+- 窄build/ABI验证包括：C Werror hardened编译、ASan+UBSan真实helper、源/ABI/binary hashes、repeat build不覆盖、实际emit typed/bundled-entry布局smoke、坏primary即使邻包资产有效也不fallback、helper-only tar/extract保留700且可执行。代码资产允许经owner/不可外写/hash/ELF核验的pnpm hardlinks；凭据仍nlink1。父后续完整package gate需保留helper700，不能统一抹为600。本轮helper-only tar/小范围emit不等于完整bundle/正式安装验收。
+- scoped strict源/测试及Host/Client noEmit均通过（`&&`串联，不走build脚本），本change strict与范围内tracked/untracked whitespace、输入hash核对另记证据。所有persistent runtime fixtures仅忽略的`.cache/auth-profile-*` synthetic，保留未删；早期cc临时scratch位置未审计，最终compiler child已固定cache TMPDIR/最小env，不声称历史零global临时活动。
+- [API/矩阵/限制](native-auth-snapshot.md)、[本切片实施记录](../openspec/changes/add-native-auth-profiles/implementation-1.2-linux.md)、[原始合成证据](../.cache/auth-profile-kernel-evidence-20261025/README.md)。仅Linux x64/glibc及已知local-FS能力；本机FS实测不冒称所有FS/Windows/macOS验收，缺helper/ABI/noexec/未知FS明确UNSUPPORTED。其余15项待办；后续真实导入、原生保护/identity、模型、UI、全包构建/部署须分别核验。
+
+## 2026-10-25 native-auth 独立 store 基础切片（仅1.1完成）
+
+- 本切片只实施 [add-native-auth-profiles 的1.1/1.2范围](../openspec/changes/add-native-auth-profiles/tasks.md)：新增 Host-private [store](../src/host/native-auth-store.ts)、[文件原语](../src/host/native-auth-files.ts) 与[观察/严格拒绝入口](../src/host/native-auth-snapshot.ts)，没有注册工具/UI/runtime/native adapter，没有读取真实 auth/config/history，没有构建/打包/安装/改版本/提交。既有 Cursor 候选、冻结证据与空闲 guard 未动。
+- 1.1：独立 materialRevision/nativeRoot 与 recordRevision/CAS、同身份重入、request ID 准确回执、签名私有 registry/manifest、坏/缺 key/registry/manifest fail-closed、禁用及固定旧材料解析。最终 nativeRoot 在可信 prepare/verify 前固定，不 rename；native token 可正常更新，不以永久字节 checksum 使续期失效。API credential HMAC 私有且不冒称远程账号 ID。跨实例和真实独立 Node 进程的 mkdir write lease 覆盖异步 staging/verify；正常只 rename 私有 lease marker，崩溃不自动清理/接管。
+- TDD 实际红：模块未存在时2 suite失败、0行为测试执行；首次可执行29项28PASS/1FAIL，失败为快速 file ABA 在时间戳粒度合并时逃过 FD/path stamps。保留该反例；fs.watch 虽能观察它，但无公开 queue-drain/overflow 证明，不能以固定 setImmediate 或一次变绿宣称安全完整。
+- 因此 **1.2保持未勾选**。`withNativeAuthSnapshot` 明确 `AUTH_UNSUPPORTED`、不借出源字节、不调用 projection；store中同样拒绝，零 native verify/零 registry publish。`observeNativeAuthFiles` 仅为内部未验证诊断，返回 `verified:false`，不能作为发布/导入授权。后续可信供应商 adapter 仍需独立证明 coherent-generation/source-binding/白名单/schema/native identity，callback 本身不是证据。Linux以外的锚定语义未实现；Windows ACL未证不放行。
+- 最终定向回归：`pnpm test tests/native-auth-store.test.ts tests/native-auth-snapshot.test.ts tests/native-auth-files.test.ts --no-file-parallelism --reporter=default --reporter=json --outputFile=.cache/auth-profile-evidence-20261025/tests-final-r3.json` → **3文件58PASS（21+20+17）、0失败/跳过**，包含双revision、API换key拒绝、冷恢复/坏manifest、真实跨进程lease、原子publish失败后签名孤立材料不复活、链接/权限/owner/有界读/取消/私密marker、严格入口零发布。父只读复审另发现leaf目录UID布尔条件与非相邻路径prefix检查缺口；2个新受控负例先执行为**2FAIL/15筛选跳过**，修正为leaf强制current UID、set逐祖先碰撞拒绝后最终58项全绿。串行是为避免公共祖先`.cache`的并行变化触发保守拒绝，不改变产品边界。[证据说明](../.cache/auth-profile-evidence-20261025/README.md)和所有 synthetic fixtures 只在忽略的`.cache/auth-profile-*`，没有永久删除。
+- scoped strict/noEmit（显式`--types node`）通过；Host与Client分别 `pnpm exec tsc -p tsconfig.host-build.json --composite false --incremental false --noEmit` / `-p tsconfig.client.json`，最终用`&&`串联均通过，不走build脚本。`pnpm spec validate add-native-auth-profiles --strict --no-interactive`通过；范围内diff whitespace检查通过。早先缺Node types、返回路径/fixture类型及callback never helper的类型失败均修正后重验；曾出现Host失败被分号后Client退出0掩盖的命令，不记为通过。
+- 实施/schema/API与未完成边界详见[本切片记录](../openspec/changes/add-native-auth-profiles/implementation-1.1-1.2.md)。本change只完成 **1/17**；1.2与其余15项共16项保持待办，不宣称实际 Native 导入、模型、UI、macOS/Windows、全量回归、隔离包或热部署通过。
+
+## 2026-10-25 显式 AGY 账号目录查询
+
+- 本轮仅补 `cliworker_models(cli, agy_account)` 的只读账号发现，保留隐式账号绑定和原生稳定性保护，不修改旧 Worker 或私有设定。其余既有未提交改动不属于本轮交付。
+- 自动验证：dispatch-flow、worker-model-control、authorized-catalog-windows-agy、agy-account **4文件110项通过**；Host/Client typecheck、本 change OpenSpec 严格校验通过。未运行全仓回归，不以本次定向结果代替全量验收。
+- 隔离构建基于实际已安装包：改前 index.ts 的编译结果逐字等于已安装 Host 模块；仅替换新工具入口与映射后重打包，只有4个Host产物变化，未带入其他在途源码。首次构建因复制包内空node_modules导致EEXIST，保留现场后在新preview-r2排除该目录完成；编译烟测首次误读defineTool schema层级，经核实际properties结构后修正测试，合成显式查询通过。安装归档 SHA256 `8ea3dec822d9e2bbb0f56018300e5e5f67034a1d0183da3e03de91d061b2e9a2`。
+- 正式并发统计及安装脚本均确认无活动/排队任务后，通过 `dsh plugin --profile web add <archive> --ignore-scripts` 安装；703个产物与候选一致，358份已有Worker/binding记录不变、并发及无关profile依赖不变、DSH PID38589未重启。备份保留在 `.cache/explicit-agy-catalog-20261025/installed-backup`；仅修改已备份profile的来源注释触发正常热重载，未改功能配置。
+- 在线正式工具验证：`cliworker_models(cli="antigravity", agy_account="lxy")` 返回精确原生模型/强度和只读账号回执；建立新设定前，隐式同CLI查询仍报ACCOUNT_CHANGED。随后明确选择同一lxy的Gemini 3.8 Flash/high创建新Worker agy-2（worker `bfc33f8b-2ec0-4897-ad38-4a76dd62b498`，run `e48ef71c-1a88-4cbf-9539-0120a732ca42`），实际完成三份授权README的润色。完整公开正文已收齐，configured/observed均gemini-3.8-flash-high、modelEvidence=native、partial=false、cleanup=confirmed；主侧核对真实diff并定点修正语义，不能把Worker自报无风险代替主侧检查。
+- 独立只读代码审查发现P3：显式查询仍构造缓存目录，可能造成不必要写入或被无关缓存权限阻塞。已改为显式路径不构造/读取/写入设置页缓存，补冷/热缓存反例；最终 **4文件111项通过**，typecheck再次通过。仅对本次Host候选重建四个产物，归档SHA256 `f6bb280069cfb8b332a462ecd2c4dfab1c3fd1090f48bf7adac31f5a12a18f57`。待润色Worker完成且globalActive/globalQueued=0后官方热安装；703产物核对一致、360份Worker/binding记录不变，DSH PID、并发和其他依赖不变。最终正式显式lxy目录查询再次成功；没有为该缓存细化重复跑真实模型。
+- 本 change 已核对完成证据、同步主规格并归档；最终 OpenSpec 严格校验 **34项通过、0失败**，范围内 diff whitespace 检查通过。未提交/推送/发布插件，也未更改旧Worker配置；[任务清单](../openspec/changes/archive/2026-10-25-query-explicit-agy-account/tasks.md)区分工具恢复与真实润色验收。
+
 ## 阶段 1：基础准备
 - [x] 核验 Harness 0.2.0-rc.2、agy 1.2.16 和真实模型列表（规划阶段只读核验）。
 - [x] 建立 AGENTS.md、设计文档和任务清单。
@@ -2591,3 +2708,481 @@ pnpm exec vitest run tests/kimi-credentials.test.ts tests/kimi-accounts.test.ts 
 - 使用仓库Windows工作流既有的依赖检查开关，`pnpm --config.verifyDepsBeforeRun=false spec validate --all --strict --no-interactive` 在新根目录通过28/28；只对本次命令生效，没有改长期pnpm配置或清空依赖。既有migrate重复ADDED的archive提示继续保留，不能冒称这些规格已全部归档。
 - 提交前限定本轮源码、测试、README、设计/验收文档与五项OpenSpec变更；私钥/GitHub token/Google API key/live key/字面JWT五类有限规则扫描未发现匹配。该检查不冒充完整秘密审计；.cache、node_modules、账号、运行日志和本地包不强制加入Git。真实模型、GUI及未完成的权限/平台边界继续保留，不因提交而归档或虚报通过。
 - 目标仍为个人origin的fix/native-accounts-and-cli-adapters分支，upstream只读，不切回或合并main；提交和推送结果由后续Git/远端SHA核验及父会话回复确认，不在提交之前冒称成功。
+
+## 2026-10-24 Agent 模型控制与逐轮结果检查点
+
+- 本次从HEAD `16652c38065a6ccdfc3949a9fcea3099e273920f`、分支 `fix/native-accounts-and-cli-adapters` 接续；实际根为 `/home/timidly/dsh-cliworker-now`，旧agents路径仅兼容软链接。父会话授予编码子会话唯一写权并保持只读。已有 `add-agent-worker-model-control` 方案先strict/apply，再按用户补充更新匿名化准入和fresh首轮模型契约。包名/version保持dsh-cliworker-now/0.8.2，无add/commit/push/PR、安装、~/.dsh/核心/skill/登录/凭据/DB操作；未启动任何真实CLI或模型。
+- 新增 `cliworker_models`（Worker或互斥明确cli目录）、`cliworker_configure`、`cliworker_configure_conversation`、`cliworker_result`，回执controlApiVersion=1。Worker配置与Remote共用目录和提交核心，仅改其preference；future新Worker配置只改已有完整原生确认的parent/project/CLI setup，保留role、不改project default/其他parent/已有Worker。FIRST_SELECTION_REQUIRED不暗填角色，原start无选型model参数。首次chooseDispatch和conversation重配共享锁，取消/源变动/并发不能保存半设定。
+- followup新增expected_model/expected_run_id，start新增仅校验的expected_model；取确认快照、异步授权后与同步Runtime准入前复核，不匹配零run/Worker/prompt，不从标题或正文推测模型。expected_model必须使用配置回执已resolve的configuredModel，包括原生effort variant后缀，不是目录分组别名。新旧调用兼容，保留busy/preparing/cleanup/native inbox/paused queue/child/Host plan/read-only/fixed-v2门禁，不自动stop/clone/retry。
+- 新轮queued事件记录runConfiguration（不可变模型/强度/mode），终态记录runOutcome/cleanup；不迁写旧历史。result只用目标run公开事件，旧轮缺配置/观察就unknown，绝不借当前preference或旧lastResult。正文不含思考/工具/raw，失败中断保留实际公开片段；completed但wrong/conflicting/无观察证据显示targetModelVerified=false与notice，不计作目标模型完成。AGY init mismatch先保留原生观察模型再拒绝，不读模型自称。
+- 稳定HMAC游标绑定worker/run/水位/offset/页预算/正文与元数据摘要，Host私有随机key持久化0700/0600；追加、新run、Host重启不混页，坏签名/错scope/恶意预算拒绝，异常路径buffer清零。只接受明确run-scoped SUCCESS汇总补正文；无scope SUCCESS即使以当前stream为前缀也不扩写旧尾，ERROR不回填。无stream且缺范围证据明确unknown。已用completed/failed两反例和成功run-scoped唯一正文对照验证。
+- 父会话匿名化真实provenance显示working-directory系统来源被当作同外壳turn第二个native任务；编码没有读取/修改原个人日志。修复在await next前复制claimed输入，typed working-directory/runtime-context通知不单独准入或steer，不按正文匹配。官方真实AgentLoop合成fixture证明：runtime-only零新native run/job、真实user同文可用、混合上下文不掉用户、下游中间件附加指令不成为正文；只用官方continuable激活，不伪造registry实例。
+- 首轮失败定位并修正：结果helper Stats类型及foldEvents参数位置；工具fixture把undefined当JSON、误断言defineTool规范化schema；官方child在旧维护测试后已drain，改为官方continuable激活；新增await曾把ProcessCleanupUnconfirmedError包装为RemoteError，恢复原分类后81项queue全过。只读review指出unscoped SUCCESS前缀扩写，严格filter后两反例实际通过。没有为了过测试放宽门禁或删除失败材料。
+- 最终关联命令如下：20文件628PASS，0FAIL/0SKIP，退出0；其中模型控制27、逐轮结果19、NativeAGY8、AGY outcome37、queue81。路径过滤包含harness-conversation的ts与tsx，实际20文件。Host noEmit tsc亦退出0；不是本仓223文件全量，后者仍只在正式提交授权前另做。
+
+```sh
+umask 022
+node node_modules/typescript/bin/tsc -p tsconfig.host-build.json --noEmit
+node node_modules/vitest/vitest.mjs run tests/worker-model-control.test.ts tests/worker-run-result.test.ts tests/native-agy-harness.test.ts tests/agy-run-outcome.test.ts tests/harness-service-integration.test.ts tests/harness-conversation.test.ts tests/native-runtime.test.ts tests/core.test.ts tests/runtime.test.ts tests/followup-queue.test.ts tests/dispatch-flow.test.ts tests/routing.test.ts tests/worker-permissions.test.ts tests/worker-management.test.ts tests/cli-settings.test.ts tests/settings-catalog-cache.test.ts tests/cli-account-binding.test.ts tests/opencode-v2-service-integration.test.ts tests/context-telemetry.test.ts
+```
+
+- 首轮唯一preview的build/两端postgen已成功，但自编验后脚本误要求原生runner也出现在lib/types/host，ENOENT退出1；实际build契约只要求这些runner在lib，三项新v2共享core才需双副本。保留首轮目录，按正确资源清单新建 `.cache/agent-model-control-preview-20261024-r2`，`node .cache/build-agent-model-control-20261024-r2.mjs` 整体exit0，Remote生成、Host/Client bundle及postgen两端typecheck对DSH0.2.1-rc.2通过。284个src副本一致，源树SHA256 `ddb6f009675086a9903b4fbe516579a2d64c347d06d965a3ecfa9179acd9b265`；AGY/Cursor/MiniMax/v2所需runtime副本一致，不覆盖旧材料，不把根目录未生成Remote的独立Client检查说成通过。
+- strict change与spec:check为29/29通过，既有migrate重复ADDED archive提示保留；最终交接前再复查apply进度/whitespace/空index。1.1–3.2及4.1共13/17项仅为源码/合成/隔离构建完成；4.2–4.5由父会话接手整合包、空闲检查、热更新schema/receipt及真实existing/fresh Opus，不在本子任务虚勾。
+- 部署证据须区分：旧在线profile仍指向c3数字Cursor包，父会话只读确认已装Host SHA256 `30e5310092f9e4ba99d9198e12fd67a04ab532974a88713cde5c4f5ce9471795`，仅旧5工具；“别的Agent说已更新”和version0.8.2不是新控制面上线证据。新源码/r2未安装，后续以bundle hash、新工具schema（含expected_model）、controlApiVersion及实际原生init回执验证，不重启现有DSH或停止别人任务。
+- 父会话旧在线c3独立实际Cursor只读基线：参数化模型首轮和不含nonce的同会话记忆成功，native Read逐字节等于当前测试文件且hash核对，受控长输出停止为interrupted/user、保留部分正文且原生进程范围无残留，停止后同Worker续聊成功。额外WDnotice派遣单独列bug，不作为正常轮次通过。这不是新控制面、换模/effort/工具桥/附件/写入/模式/GUI/Windows验收；未写入真实个人会话标识或题目。
+- MiniMax本次真实准备先在unsupported provider认证/服务覆盖检查拒绝，未到本次OAuth读取，不得继续归因为未登录；保留旧登录门禁为历史。Kimi旧GUI未复现与v2真实原生服务/模型未验收仍公开。MiniMax任务历史中Cursor缺userId的旧结论已加后续数字身份及新基线交叉引用，不篡改历史、不替其他change勾真实验收。完整其他CLI parity由父会话后续分阶段处理，不在此scope暗开能力。
+- 所有本轮jobs在正式交接前收齐，无递归子Agent；最终只释放写权，不自动打包/安装/归档。
+
+### 2026-10-24 父会话独立回归、归档与无重启热安装
+
+- 唯一写权正式交回父会话后，按相同19个路径过滤（包含两种harness-conversation测试扩展名）独立执行Vitest，追加`--maxWorkers=4 --reporter=json --outputFile=.cache/agent-model-control-parent-tests-20261024.json`：实际20文件、628PASS、0FAIL/0SKIP，退出0；随后独立Host noEmit tsc退出0。该结果仍是关联回归，不冒称本仓全量或真实模型完成。
+- 独立核对源树284文件与最终r2逐hash一致，源树SHA256仍`ddb6f009675086a9903b4fbe516579a2d64c347d06d965a3ecfa9179acd9b265`；Host SHA256 `78c821f91ce5c2a8c209108e869bfa803ae67bb240aa760035dd990773090ee5`，Client SHA256 `8aa51ebc080a1245203d36954c30dae5bcfb7a2cd4070c79df37d82a29544073`，两语README及package逐字节一致。
+- 在独立r2执行`npm pack --ignore-scripts`，新归档`.cache/agent-model-control-package-20261024/dsh-cliworker-now-0.8.2.tgz`：18,179,358字节、889个regular file，SHA256 `b7e1e8b2f8b9a2304be0cd2130fa6a7579344fb5bec79ed3a5a50dbebfe3afea`。全部889文件解到独立检查目录后与r2逐字节验证，拒绝非regular或越界路径，不包含cache/账号/历史。初次归档验证因Client 8,784,553字节超过8MiB stdout预算而ENOBUFS；仅把验证读取预算改为64MiB后通过，未改包或产品源码。
+- 用户明确选择实施及整合热更新实测，并要求一般取舍按推荐继续。旧四份profile配置、c3回退包及102个既有Worker/history文件校验摘要，保存于私有`.cache/install-backups/agent-model-control-stage1-20261024`，不动账号或原日志。暂停恢复后复核四配置和候选未变；全局51个Worker无queued/running/stopping，且无插件native启动进程，未强停他人任务。
+- `dsh plugin --profile web add <本轮归档绝对路径> --ignore-scripts`退出0；存在peer提示，但只更新CLI Worker file依赖，其他依赖及bundles逐项不变。已装Host/Client/package/两语README与r2字节一致。随后只改已备份profile patch的一行来源注释触发原有HMR，不改核心、不启动新server、不重启DSH；既有PID和start ticks保持，原URL仍响应401（仅健康性，不是视觉验收）。
+- 热更后主Agent实际成功调用`cliworker_models(cli=antigravity)`并收到controlApiVersion=1、完整确认状态和原生账号目录；随后新start的expected_model已实际接受。准确Opus目录条目为Claude Opus 5.5及原生low/medium/high变体，不从名称猜模型ID。目录可见不代表远端生成已成功；existing/fresh Opus及GUI结果继续按真实回执追加，未先虚勾4.3–4.5。
+- 热更后再次逐一核对102个既有Worker/history文件，全部hash不变；没有Git暂存/提交/推送/PR/发布或包名版本变更。
+
+## 2026-10-24 MiniMax Stage1：标准托管显式配置误拒修正（源码，待父会话统一候选）
+
+- 唯一源码写权由父会话从已释放的 AGY 控制面子任务正式转交；实际仓库 `/home/timidly/dsh-cliworker-now`、分支 `fix/native-accounts-and-cli-adapters`、HEAD `16652c3`。已验收 AGY dirty、README/设计历史、旧预览/归档均保留，不修改其 runtime/index/harness/types 等控制面源码。父会话只做在线 canary；本子任务不运行真实 CLI/模型、不读取真实配置或凭据、不安装/重启/编辑 `~/.dsh`，不派 Agent、不打包、不暂存/提交/推送/PR，不改包名/0.8.2。
+- 最新问题不是已证明的登录失败：父会话正式 MiniMax 准备在配置层被 blanket apiKey/baseURL 检查拒绝。父会话已给的安全投影为原生默认 token_plan、minimax/Anthropic npm、options 仅有原生占位 `sk-xxx` 和已知 HTTPS 托管 origin、无 URL 用户凭据；未要求清除配置或切换账号。本轮沿现有 `add-minimax-native-acp` 授权补齐 Stage1 proposal/design/spec/tasks 后实施，不新建等待审批流程。
+- 新增纯 `src/host/minimax-route.ts`：按显式 authMode 优先、否则原生托管 origin 推断 managed-login，并结合 token_plan、默认 minimax、Anthropic npm 判别。显式 endpoint 只接受解析后 origin 精确属于 https://agent.minimaxi.com、https://agent.minimax.io、https://agent.minimax.cn 且无 URL 用户名/密码；缺省 endpoint 保留原生默认。key 只接受缺省、原生缺 key 语义的空串或字面量 sk-xxx，不 trim/大小写折叠/ENV 插值，不把占位当身份。helper 只返回安全类型化判别，原始 key/URL 不进入结果。
+- `minimax-accounts.ts` 只把原配置路由检查委托给该 helper，保留全部私有有界 no-follow 读取、state/credential/cache 契约、稳定主体、scope、至少一分钟有效期、config 内容摘要/文件版本与前后重检。显式 api-key/oauth、真实 key、API/custom 默认、HTTP/畸形/近似域/URL 用户凭据、provider/model headers 与 modelRef 认证/endpoint 覆盖继续拒绝；合法占位但没有当前 OAuth、主体缺失/过期/scope 不符仍不启动元数据。
+- 纯路由新增 37 项；MiniMax native 测试新增 8 项到 69 项，含三个 origin/标准路径的显隐 managed、placeholder/缺省 key、配置合法但 OAuth 不存在、稳定身份/有效期/scope、合法托管 origin 变更保留主体但改变 route 绑定，以及 region/source/config A→B→A。复用全量合成 bridge 24 项和自身账号 binding 54 项核对公开 PRIVATE_* 边界；无真实模型/服务进程。
+- 初次普通 `pnpm spec` 因搬目录后的依赖位置检查尝试自动 install，在 purge 前因无 TTY 拒绝并退出 1，未进入规格检查；没有设置 CI、同意 purge 或重装。后续只对命令传项目既有 `--config.verifyDepsBeforeRun=false`，现有锁定依赖可用。首轮定向回归 4 文件 184 PASS（8.93 秒）；补强托管 origin/ABA 断言后最终命令如下，**4 文件、184 PASS、0 FAIL/0 SKIP，退出 0，7.87 秒**。这是关联合成验证，不是全仓或真实账号/模型验收。
+
+```sh
+umask 022
+node node_modules/vitest/vitest.mjs run tests/minimax-route.test.ts tests/minimax-native.test.ts tests/minimax-bridge.test.ts tests/cli-account-binding.test.ts --maxWorkers=4
+node node_modules/typescript/bin/tsc -p tsconfig.host-build.json --noEmit --composite false --incremental false
+pnpm --config.verifyDepsBeforeRun=false spec validate add-minimax-native-acp --strict --no-interactive
+git diff --check
+```
+
+- Host 类型检查通过：先用 TypeScript API 在内存读取相同配置（116 个 Host/Shared 文件，noEmit、composite=false、incremental=false，不产生缓存），再独立用上述 tsc 命令复核退出 0。本 change 严格校验与 whitespace 检查通过；不重跑全仓、不构建独立包、不声称 Client/新候选/在线验收通过。构建资源无需新增 MJS 复制：helper 为正常 Host TS 输入，父会话统一 candidate2 应核对 emitted `lib/types/host/minimax-route.js` 及 Host bundle。
+- API/BYOK/Plan/MCP/附件/fork/steer 不在本增量支持范围，未暗开能力。修复前配置层误拒与旧原生 login-required 分别保留为历史，当前真实账号仍须父会话在统一候选热安装后用正式 models/start 核对；源码兼容修复和合成 PASS 不替代真实目录/派遣、GUI或 Windows。
+- 全部本子任务后台 jobs 收齐后只交还唯一写权；未归档或替父会话勾真实验收，不清理原有材料。
+
+### 2026-10-24 热安装后 AGY 两种 Opus 路径的真实闭环
+
+- 父会话用正式start、models、configure、configure_conversation、followup、result工具完成实机验收，未通过Bash启动外部CLI。先前已确认Argon/high的角色和plan保持：受控任务真实返回首轮标记，公开runConfiguration和native observed均为gemini-4-argon-high，completed、cleanup=confirmed。
+- 同Worker先查询自身账号目录，再configure精确Claude Opus 5.5/high，配置回执actual configuredModel=claude-opus-5-5-high、appliesTo=next-run、executed=false。随后followup同时携带该actual模型和前轮runId；新run正常完成，native observed同为claude-opus-5-5-high，并在未重复给出标记的续聊中正确回忆。原生conversationId与DSH child保持原值，不靠回复自报或标题作模型证据。
+- 单独configure_conversation只将本父会话的新任务设为Opus/high；配置后故意以旧Argon expected_model调用start，真实在Worker/正文创建前拒绝。再以配置回执的actual模型创建fresh只读任务，实际仅1个run，首个queued配置即claude-opus-5-5-high，唯一native observed亦为此模型，正常返回验收标记，completed、cleanup=confirmed；新native conversation与上一Worker不同，没有先创建或运行Argon空题。
+- 对两轮结果实际调用新result API：配置/观察模型对应各自run，targetModelVerified=true、公开正文完整、无partial、cleanup=confirmed；切Opus和开始后续任务后重新读取旧Argon run，仍是旧模型和旧正文，不借最新偏好。原始assistant按run合并分片后独立核对；单个packet不一定包含完整标记，不能以单packet字符串匹配误报失败。
+- 私有元数据安全投影独立证明：项目默认仍为gemini-4-argon-high，本父会话future setup为Opus/high，原有另一个Worker仍为Argon/high，role=null的已确认无角色选择保持；未改其他父会话或原审题Worker。真实Worker/run/会话标识和原任务正文不放入Git日志。
+- 本次长排队不是AGY服务固有限制：插件默认maxConcurrent=2、跨CLI/parent共享；验收排队时两个实际运行进程属于别的父会话，自己的Worker queued且未spawn。未停别人任务、未重复start、未擅改并发；槽位释放后本轮进入执行，Argon实际原生时长约5秒。queued新Worker尚未落账号绑定时models(worker)的历史缺绑定错误容易误导，后续排队说明增量需区分尚未准入与旧历史，不能因此清账号或重试。
+- 用户随后接受5–10并发并询问跨会话影响：现有配置只启动时读取、schema最大8，无在线调参；推荐默认8、可调10，新增不重载/不取消在途任务的运行时设置与排队原因，保留同原生会话及同项目写串行。该调度增量尚未上线，不把Opus通过等同全部CLI parity、GUI或新并发设置已通过。
+
+### 2026-10-24 父会话 AGY 受控停止、部分回复分页与恢复补验
+
+- 父会话仅使用自己的fresh Opus canary，正式工具长流任务已经生成2051个公开字符且尚无终态时，通过既有fs.watch观察后执行cliworker_stop；实际终态interrupted/user、公开部分正文7152字符、cleanup=confirmed。父会话独立检查/proc，没有此own native/bridge残留，没有停止其他父会话或原审题任务。
+- 正式result先以8192预算完整读取该停止轮，再以4096和nextCursor两页读取，4096+3056拼成7152，到hasMore=false，状态始终interrupted/partial；两页事件水位796和digest相同，不借上次成功正文。
+- 同own Worker停止后正式followup恢复nonce任务已completed，native observed仍claude-opus-5-5-high、cleanup=confirmed，仅回复恢复任务标记，没有接着生成旧长流。新run水位806；此后重放旧cursor的第二页，仍是水位796、原digest、原总字符数与offset、interrupted/partial，逐字等于恢复前旧页，不混新成功标记。全部CLI/watch后台job由父会话收齐。
+- 以上为父会话独立实际事件/结果/进程证据，不是本次编码子会话另跑模型；只匿名追加数字与结论，不写私有Worker/run/conversation标识或原题。据此AGY控制change勾4.4，现16/17；4.5、GUI和全CLI parity仍未虚勾。浏览器控制通道当前不可用，刷新和视觉待实证，不把通道问题认定为本UI代码失败，也不为此更改核心、浏览器或系统。
+
+## 2026-10-24 全局在线并发与公平排队源码候选（未安装）
+
+- 用户明确授权默认8、可调1–10及安全在线入口，父会话和MiniMax Stage1写者均正式释放后，本编码子会话成为唯一写者；父会话只在线canary/只读。根/分支/HEAD仍 `/home/timidly/dsh-cliworker-now`、fix/native-accounts-and-cli-adapters、16652c38065a6ccdfc3949a9fcea3099e273920f。保留此前AGY控制与MiniMax Stage1 dirty，未暂存/提交/推送/PR、未打包/安装/重启、未读改~/.dsh、真实账号/凭据/DB或日志，不递归派Agent。
+- 独立change improve-worker-concurrency先一致proposal/spec/design/tasks及strict，再按已有授权apply。默认运行槽8，上限10；独立Host-private concurrency.json只存policy+limit，可信持久选择优先初始plugin config/default，旧profile明确初始2不被暗改。no-follow、有界、inode/stamp、owner/mode/nlink和私有根身份检查；坏记录或链接不默默退默认，服务保留safe getter（limit=null、unavailable、短原因），新准入/调参拒绝。本阶段不提供对不可信记录的自动修复；不显示原始JSON或外部路径。
+- Runtime setter验证整数1–10，先私有保存成功再原子发布limit/changed/drain。提高即放行eligible队列，降低保留所有在途任务和进程，允许active暂高于limit，不取消/重排/重开旧任务；持久失败预算和revision不变。新正式cliworker_concurrency无limit只读，有limit明确改全局；readConcurrency/configureConcurrency复用真实主Agent核心，plan/read-only/child/取消拒绝写，native工具桥原cliworker正则明确覆盖新工具。
+- 调度轮转parent、每parent仅队首候选；保留原全局queue，用其中更早写任务形成project屏障，与running任意accept-edits项目冲突共同限制。无冲突其他parent/项目可以使用空槽，但同parent后项不能跳首项；不抢占inflight，43题大parent也不能霸占后续释放槽。原sameWorker互斥、priority/followup generation、取消/disabled/cleanup/paused/fixed-v2约束保持。
+- snapshot/status仅投影有限真实阶段（capacity、project-write-conflict、parent-turn及恢复/准入/授权/入口/harness/launch准备、running、cleanup），不是猜测进度。aggregate只含globalActive/globalQueued/limit/source及当前parent计数，未泄foreign身份/标题/正文。active计运行时真实占位并含准备和清理，不代表已调用模型或所有metadata子进程总量；queued新Worker尚无binding时models明确PENDING_ADMISSION、建议等待或明确cli查询，不提前绑身份、借来源或冒称历史/登录失败。旧历史缺binding拒绝不变。
+- 设置新增“并发与排队”独立页，用现NativeChoice、公共标题/section/row/description、36px刷新和既有窄屏规则，不写新样式/替代控件。明确全CLI/parent共享影响、厂商配额不是这里的限制；读前不猜默认、权限/坏态禁写，失败保留草稿且标未保存与实际值，晚回执不污染换页后的状态。计数是可刷新快照，不冒称实时订阅；selected Worker状态随既有watch显示真实原因。不改profile/HMR或卸载Runtime。
+- 首轮Host类型发现新Remote误用无参数decorator，改为项目既有命名decorator；初轮新fake backend没有响应AbortSignal，导致实际断言已过而teardown等流结束超时，修成真实受管backend的取消契约，不放宽清理。原core“两槽+项目写串行”测试显式maxConcurrent=2，把用于另一目录空槽的任务移到独立parent以符合新父内FIFO，仍断言两并发、旧同目录writer等待/随后放行；新测试另直接覆盖blocked parent head不让后项越过。没有提高timeout或跳过失败断言。
+- 最终关联命令如下：**23文件984PASS、0FAIL/0SKIP，退出0**；含新调度20、模型控制33（原27+新6）、结果19、设置组件196（原194+新2）、queue81、官方AgentLoop、fixed-v2等。MiniMax原4文件184（route37/native69/bridge24/account-binding54）完整保留。Host noEmit类型检查退出0。这不是全仓测试、真实8槽或GUI视觉验收。
+
+```sh
+umask 022
+node node_modules/typescript/bin/tsc -p tsconfig.host-build.json --noEmit
+node node_modules/vitest/vitest.mjs run tests/concurrency-runtime.test.ts tests/worker-model-control.test.ts tests/worker-run-result.test.ts tests/settings-dialog.test.tsx tests/minimax-route.test.ts tests/minimax-native.test.ts tests/minimax-bridge.test.ts tests/cli-account-binding.test.ts tests/core.test.ts tests/followup-queue.test.ts tests/native-harness-tools.test.ts tests/cli-settings.test.ts tests/worker-permissions.test.ts tests/worker-management.test.ts tests/harness-service-integration.test.ts tests/opencode-v2-service-integration.test.ts tests/routing.test.ts tests/dispatch-flow.test.ts tests/native-runtime.test.ts tests/agy-run-outcome.test.ts tests/native-agy-harness.test.ts tests/harness-conversation.test.ts
+pnpm --config.verifyDepsBeforeRun=false spec validate improve-worker-concurrency --strict --no-interactive
+pnpm --config.verifyDepsBeforeRun=false spec:check
+```
+
+- 新唯一统一candidate2为 `.cache/worker-concurrency-candidate2-preview-20261024`，构建命令 `node .cache/build-worker-concurrency-20261024.mjs` 退出0，Remote生成、Host/Client bundle及post-generation两端typecheck对DSH0.2.1-rc.2通过。288个src副本逐hash一致，源树SHA256 `2cb87635767bf792913db3cc13b83247f18def308feb562ff5a78906820060f3`；Host `8f209ab712743d6649f4b9138742cb5ab14c9c52edb2a61e1c33eebc7334b2c3`，Client `c6fa4dc037b10db4bbcb23cd8cb8f29e7d70364235d41891a6dcbc17faedd18c`。README两语逐字节一致，所需native helper副本及emitted MiniMax route/concurrency Host/Client TS helper齐全；旧r1/r2/回退包不覆盖。包名/version仍dsh-cliworker-now/0.8.2，不安装/打包。
+- strict change通过、全spec30/30通过，既有migrate重复ADDED的archive提示保留；最终apply进度和whitespace/空index交接前再核。独立只读review未发现高置信must-fix，default注释/失败草稿nits已修，不以静态review代替实际回归。
+- 当前online仍包A、全局初始2；以上新8槽/公平调度只在源码、合成与candidate2中通过，父会话后续按真实空闲/授权完成部署与在线选择、schema/receipt/调度复验。浏览器控制通道不可用，真实刷新、窄栏视觉及Windows未验收，不扩大到DSH核心或系统排障。全部本子任务jobs收齐后正式释放写权，不自动归档或清理历史。
+
+### 2026-10-24 父会话独立验收、用户12槽增量及真实热部署
+
+- 正式接回写权后，独立重复同23个关联测试文件：984 PASS、0 FAIL/0 SKIP，随后Host noEmit类型退出0；JSON记录在忽略的 `.cache/concurrency-parent-tests-20261024.json`。独立逐hash核288个源码副本、两语README、Host/Client及必要emitted helper均与candidate2一致。其901文件归档SHA256 `0c11cfa9420b5f4dfec9b5ee8701ca9072bcc5eb3ef6c212d3d0ad910db8fef2` 保留，未安装；首次准备时检出其他父会话刚启动的两个AGY运行而安全拒绝，未停任务。随后事件驱动fs.watch等到连续3秒全局空闲，没有忙轮询或强杀。
+- 用户此时明确“部署、上限可热修改、默认8、本机先12”；因此不把原最高10的候选冒称12。Cursor P0写者正式临时释放（只有独立change草案，无产品源码更改）后，父会话将共享MAX_CONCURRENCY、初始config schema、工具说明/路由、设置页及当前文档统一为1..12，默认仍8，拒绝13。初始config改用共享常量防两处漂移。旧10槽阶段的历史日志和归档不改写。
+- 新增明确12槽模拟生命周期：2升12保持原handles，12降8不杀在途，恰到8不准入第13任务，少于8才放队列，再持久12并重启恢复；正式Tool/Remote和设置页原用例改为实际选择12。最终独立23文件985 PASS、0 FAIL/0 SKIP，Host类型及本change strict退出0；该12槽生命周期是合成，不是12个云模型并发生成。记录 `.cache/concurrency-twelve-parent-tests-20261024.json`。
+- `node .cache/build-worker-concurrency-twelve-20261024.mjs` 新独立preview退出0，Remote生成、Host/Client bundle及postgen两端类型对DSH0.2.1-rc.2通过。288源码逐hash一致：源树SHA256 `f83e7192fd5dc49cba0841e8a2e7dc54b7f93ad95b386e00b24e93bc6a3075d8`，Host `7b9ae0b8834fe3acc8b5fd5c4394a195b6c72d8fcd0692eab2d2825bbc9d29e1`，Client `7cdf618910d8c5b5a7d5a8956a46d07c4ab4ccf309ce621763b32741e5db1caf`。
+- 新归档 `.cache/worker-concurrency-twelve-package-20261024/dsh-cliworker-now-0.8.2.tgz` 为18,205,276字节、901 regular files，SHA256 `8fc94a11a9137d99c36953382b7d95a728333fa5bb1ba16d70aad3d7040c0386`；所有901文件独立安全解包后逐字节比preview一致，包名/0.8.2不变、无lifecycle script。此前A、r1/r2、candidate2和全部回退材料不覆盖。
+- 临安装再次确认所有Worker及native launcher都无活动，备份4份profile文件、上一A包和136个既有Worker/history摘要到私有 `.cache/install-backups/worker-concurrency-twelve-20261024`。正式 `dsh plugin --profile web add <十二槽归档绝对路径> --ignore-scripts` 退出0；只有CLI Worker file依赖变化，其他依赖数据保持；已装Host/Client/package/两语README字节与preview一致。只更新已备份patch的来源注释触发既有Host HMR，未重启DSH或替换server。
+- 真正线上 `cliworker_concurrency()` 首次回执limit8/maxLimit12/source initial，随后显式 `limit:12` 保存成功，再只读返回12/persisted；另实际在线12→8→12回执均对应新值、无需reload/restart。检查私有concurrency.json的policy1/limit12、0600、单链接，原DSH PID及start ticks保持，136个历史文件hash全部不变。调参时aggregate active0/queued0，不能把本轮回执说成已验证12个云端模型同时执行，非抢占在途边界由上述合成矩阵证明。
+- GUI视觉仍未冒称通过：当前browser控制MCP断开，既有inspector getSources只有Host且不是client filter；同一物理机既有Windows SSH仅Session0、UIAutomation无桌面、原浏览器无预置CDP，未更改系统/浏览器启动参数或获取cookie。新Client已打包部署，实际刷新和窄栏视觉待可用控制通道。
+- MiniMax标准托管配置修复已随本包真实上线；正式 `cliworker_models(cli=minimax)` 已越过旧provider覆盖误拒，但在稳定主体处返回“认证已保存，稳定账号身份无法确认”。用户同时给出原生Mcode已真实hello成功、M3.1-Flash/订阅限免/Effort max的终端证据。不能误说用户没登录或native无max；不清配置、不借账号、不让用户盲重登。正在只读核0.6.12正规身份来源：静态发现sharedAuthCore分支可能仅在内存保存userinfo、不会写legacy verified identity cache，仍待按真实字段闭环，不以此静态发现冒称已修复或实测成功。
+- 没有Git暂存/提交/推送/PR/发布。main与fork/upstream main的先前核对不因本次热部署改变；用户要求的其他CLI完整能力仍继续，不把本机12部署说成全组完成。
+
+## 2026-10-24 MiniMax StableIdentity：模型前原生身份验证源码候选（未部署）
+
+- 父会话在完整状态树核对后正式转交唯一源码/docs/cache写权，其他编码子会话临时释放；根/分支/HEAD仍为 `/home/timidly/dsh-cliworker-now`、fix/native-accounts-and-cli-adapters、16652c3，index为空。保留十二槽调度、shared max常量、NativeChoice12及AGY/Cursor/Kimi/OpenCode所有既有dirty。父会话只做在线API/只读，本子任务不读改live、`~/.dsh`、真实 `.minimax` 配置/token/cache/日志，不发真实HTTP、不运行Native CLI/module/model/service、不派Agent、不安装/重启/打包、不改包名/0.8.2或Git提交/推送/PR。
+- 实际新证据是父会话正式models越过Stage1托管路由后停在稳定主体，而非未登录。用户原生终端hello/M3.1-Flash/订阅限免/Effort max成功为用户提供的生成证据，不是插件任务或本次userinfo成功证明。静态0.6.12 `chunk-5ADYFF2U.js:8307` y9i（UTF16@6433030）默认shared-core尝试tke获取身份，即便成功也只存内存g（@6434337），失败catch仍可保留token生成；verified文件Vbe（line6968@6118693）只在legacy mGt/l7n写。因此不让用户盲清/重登，也不把“CLI再开一次”当必能产生cache。
+- 沿已有add-minimax-native-acp fluid补proposal/design/spec/tasks，再实施本增量。新增[内部身份验证模块](../src/host/minimax-identity.ts)：精确镜像 `chunk-47KWM23C.js:585` 的prod固定区域host（cn agent.minimaxi.com、en agent.minimax.io）、GET /v1/api/user/info、buildUrl（@2554950）query及fetchAccountIdentity（@2552031）签名/header。SDK协议固定常量是公开Native合同，不是用户凭据；Bearer只在当前请求header，不进URL。请求一次、默认最多3秒、可取消、redirect:error、响应64KiB有界；不走模型baseURL或其他来源，不refresh/revoke/login/重试。HTTP与业务状态、原生camel/snake userInfo及STRING realUserID校验后只返回稳定hash；丢弃PII/原始body/error/URL/query/header，清零所持响应bytes。
+- [账号模块](../src/host/minimax-accounts.ts)拆分内部OwnOAuthProof与ensureVerifiedIdentity，普通摘要仍纯本地。只信当前token关联verified native cache，或当前固定userinfo验证的realUserID；旧record.subject/accountId及legacy local-runtime profile不再独立授权。源root/env/region/config/选区元数据、authenticated state与完整credential（generation/loginEpoch/scopes/expiry/token等）的指纹+文件stamp前后核对含ABA。epoch用WeakMap关联本地projection，不进入公开DTO；30秒非滑动内存cache只存principal hash/source-token epoch/时效，64项有界，pending按epoch合并、取消隔离、最后waiter离开才取消请求，不长存token或伪写Native缓存。
+- [目录](../src/host/minimax-models.ts)与正式[账号绑定](../src/host/cli-account-binding.ts)共用ensure准入；未verified前0模型/metadata subprocess。目录后验只读本地原proof，不向已变更的新token/来源再发userinfo；原epoch完全相同时保留本轮已核实UID。正常续期重新验证同UID后binding稳定，换UID/源则失效；缺/拒绝/不可验证身份仍configured，不把metadata成功当模型权益。原逐模型max effort与全部其他能力门禁不变。
+- 同scope独立只读复核指出初始取消保护仅覆盖HTTP等待：本地proof前后和generic binding catch仍可能转发caller原reason/cause。已仅在MiniMax document/source/summary/ensure/material及正式generic binding pre/post/catch统一fixed AbortError，其余CLI原取消和cleanup优先级不变。新增4个preabort、3个HTTP成功后proof重读中abort及1个本地summary读取中abort反例，serialized notice/stack/cause无PRIVATE标记、0modelspawn且失败不缓存；复核者随后静态确认唯一must-fix解除，未替代本子任务的自动回归。
+- 首轮5文件249 PASS（10.26秒）；补正式generic binding及8个取消反例后258 PASS（11.29秒）；最后补目录元数据期间换token不额外userinfo的反例，最终 **5文件259 PASS、0 FAIL/0 SKIP、退出0，10.57秒**：identity70、native74、route37、binding54、bridge24。全部HTTP为注入/全局offline stub、文件/令牌/会话均synthetic，bridge仅Node合成协议子进程。矩阵覆盖原生请求规范/成功形态、numeric或缺失ID、业务/401/403/429/5xx/redirect/畸形/超限、超时与body挂起、取消/重入/TTL、proof变化/ABA、换UID/正常续期、本地摘要无HTTP，以及userinfo前0spawn、模型特定max与公开PRIVATE边界；没有真实userinfo或模型请求。
+
+```sh
+umask 022
+node node_modules/vitest/vitest.mjs run tests/minimax-identity.test.ts tests/minimax-native.test.ts tests/minimax-route.test.ts tests/cli-account-binding.test.ts tests/minimax-bridge.test.ts --maxWorkers=4
+node node_modules/typescript/bin/tsc -p tsconfig.host-build.json --noEmit --composite false --incremental false
+pnpm --config.verifyDepsBeforeRun=false spec validate add-minimax-native-acp --strict --no-interactive
+git diff --check
+```
+
+- 原生目录setter额外静态核实，不凭方法名猜测：ACP line81@433927调用selectSessionModel，adapter chunk5 line6968@6093089携sessionId，实际handler line1604@2089942在sessionId分支只updateSession后return；目录opaque decode不传唯一前置全局context写入参数contextLimit。故当前枚举只改变本次owned空session override，不写用户全局/项目M3.1Flash/max默认；没有克隆auth、事后restore或改协议。原生空会话留痕边界仍保留，真实数据未读取。
+- Host noEmit与本change strict/whitespace通过。新 `.cache/minimax-identity-preview-20261024-r1` build/Remote及postgen Host/Client types先通过；之后仅目录后验上述两处收紧与一条测试，在另一全新 `.cache/minimax-identity-preview-20261024-r2` 对最终源码重新build和 `node scripts/build.mjs --typecheck-only` 全部退出0（DSH0.2.1-rc.2）。未覆盖r1/旧预览/旧包，未运行全仓或npm pack。最终289个src逐文件与root字节一致，README/package输入亦一致；源码树摘要按排序相对路径+NUL+文件SHA256+换行计算，SHA-256 `bca65bdd409534517091a4ddf794e57bf76815e772cd02525a0061b014f3a275`。
+- r2 Host bundle SHA-256 `d98bcb4cd953845dbbcbef48c77ebd68cc3903dadb744751bf6c94d49684a9ab`；Client `7cdf618910d8c5b5a7d5a8956a46d07c4ab4ccf309ce621763b32741e5db1caf` 与当前十二槽版相同；Remote JS `d00731486908a7af3e0feafd664d92cae7eb16343182500d87ee44a454adfe3e`。emitted identity/accounts/models/binding helper齐全，identity JS SHA `6045dd785d960e80c3b70b097cde0b7f5ae6970b45a94aa4ebbe05827d8ee1de`。候选是预览目录，不是已安装或已打包成果；父会话需独立关联复核及正式userinfo/models/start后才报告实际成功。
+- 父会话另给匿名真实证据：十二槽热更新后own AGY同会话续聊与用户已授权目标会话15个Opus当前run均完成，精确native observed/公开正文/cleanup均有证据；不代表15路同时并行、答案质量或MiniMax验收，本子任务没有因此运行CLI或改AGY源码。
+- 本增量仅稳定身份兼容，不扩API/BYOK/Plan/MCP/附件/fork/steer，不改并发或现有Native权限。五个本子任务后台job均完成且输出收齐；最后交还唯一写权，不自动归档、清理旧材料或勾父会话真实验收。
+
+## 2026-10-24 Host active-child独立门禁与同轮延期准入（源码候选）
+
+- 用户实际使用的目标root曾遇Host active child limit8，不是AGY上游配额。只读定位安装SDK ActivationPool.reserve的typed SubagentError ACTIVATION_LIMIT_REACHED；maxActiveSubagents默认8/volatile，连续managed后代共享root pool，独立root分开计；slot包含materializing、驻留及cleanup前，不可拿Agent idle猜空位。插件global12是另一层预算，不能承诺单root可派12。
+- 父会话给出的匿名实际事实：使用正常认证与官方settings.describe/update，准确subagent条目writable/live/revision0，唯一patch maxActiveSubagents12后读回revision1/value12，maxDepth等未改，DSH原进程及startticks不变，未改RAM或Core、未停别人任务。随后HMR后再describe仍12、插件budget12也保持；目标3个旧Host8失败的metadata时间均早于变更，变更后此类终态失败0。这个政策修复是父会话独立线上动作，不是本子任务执行，不等于新延期源码已部署、所有题已审或答案质量通过。旧失败记录不改成功，不接管foreignWorker。
+- 在父会话/前MiniMax写者正式释放后，本子任务取得唯一root/docs/cache写权。根/分支/HEAD仍原fix/16652c3，index为空；先续improve-worker-concurrency的proposal/spec/design/tasks第6节并strict，再按既有明确授权直接apply，不重复停问。MAX12/default8及MiniMax身份/route/accounts/models/binding产品源码和测试保持，未读取真实配置、用户题目/正文、账号/凭据/DB，未调用CLI/模型/远端HTTP/认证或live写入，不递归派Agent，不pack/install/重启/修改Hostpolicy/Git/版本。
+- 新host-child-admission helper只接受SDK真实SubagentError容量码；cold Remote delivery-unavailable还必须有已保留的该typed cause。message字符串、普通code对象、draining/closing/unauthorized/persistence/unknown delivery与Aggregate清理失败均不自动延期。bridge确认无真实child，完成prepare暂bind/unbind、cold pending/knownRun回滚及drain后才返回内部Deferred；Runtime再核无spawn/handle/lease/release且原Task有效，保留同Task/Worker/run/controller/prompt意图和未发布candidateID，不写failedJob/新run或额外用户消息，不增retired。
+- 新反例发现原store.replace有意强制保留全部retired引用，不能用它恢复未发布candidate而同时要求原retired集合不变。经父会话明确同意，新增独立internal-only restoreUnpublished：只接受本进程replace时捕获的authoritative完整previous/candidate快照租约与当前值，candidate任何写触碰（同值写/ABA亦算）即失效，冷Store无租约；worker/parent/current/run-turn/retired及内容不匹配拒绝，普通replace规则不放松。bridge已证typedcap、无实际Agent、drain确认后调用，Host再核current绑定/Agent；cancel/写失败/真实性未知保留failclosed、不重试。没有注册Remote/模型工具，不重写已经执行的历史。安全replacement在回滚前取projectRun已完成清理的最新previous，避免旧snapshot丢pending状态。
+- Runtime用单调原队序回队，释放global reservation，维持parent首项FIFO/轮转及更早project写屏障，独立root仍可用空槽。等待后再核准备通道、原parent实例、权限/project、代际及原权限/清理约束；移除准备通道不允许掉到无child的native路径。真正harness准入成功后才arm执行timeout，等待不消耗该预算，元数据自身有界保护不改。globalActive不把已回队Host waiter算运行槽，status/snapshot复用host-child-capacity安全标签，不猜Host8/12当前占位、不混厂商quota。
+- SDK public published subagent/end在releaseSlot后发出；没有完整capacity-ready/snapshot且unpublished rollback无end。scope在首尝试前订阅end、settings/document-updated与loader/volatile-update，忽略payload不留foreign数据，epoch覆盖失败回队前的hint，microtask合并；单个owned one-shot watchdog以2/4/8/16/30秒补偿，事件也保最小2秒失败冷却，不setInterval/tightloop或快速重复prepare。hint不是容量授予，仍每次走SDK；close/cancel移除任务和timer，scope监听随dispose，迟到event不复活。公开optional事件只有本插件类型声明桥，不新增settings runtime依赖或修改Core。
+- 验证分阶段保留：初轮5文件169PASS（SDK6、并发21、queue81/control33/core28）。补实际无end/超时/替换CAS反例后7文件200PASS/1FAIL，失败正是普通replace拒绝无retired回滚，不吞异常或放宽原保护；补专用精确CAS并取最新previous后定向9PASS（其余15项因-t选择跳过，不计作最终全组通过）。最终两次完整同关联组均 **26文件1096PASS、0FAIL/0SKIP、退出0**，最终轮16.61秒；Host noEmit类型退出0。含新helper7、Store16（原6+10）、Runtime26（原21+5）、官方SDK AgentLoop集成9（原1+8）；原queue81、AGY控制33/result19、UI196以及最新MiniMax五文件259（70/74/37/54/24）完整保留，不把重叠轮次累加。
+- 官方SDK合成实测Host1/plugin12两Root独立、Host2同root另一external provider占槽、fresh暂bind回滚/相同candidate与run一次真实模拟prompt、cold保留typed cause与旧binding、unknown delivery仍失败、NOT_RESUMABLE replacement原集合恢复、存在真实Agent时不转延期；unpublished provider.start实际占槽后抛错且end0，watchdog仍自动准入原run。另测lost hint/1000事件合并与最小冷却、无end再次失败backoff、等候6秒跨200ms执行预算、cancel/close后迟到事件0spawn、移除准备通道与权限/project变化拒绝、writer原序屏障及他root利用释放槽。Store测wrong worker/parent/turn/retired/candidate、同值旧revision/newturn/coldStore、失败commit、普通replace仍拒绝丢历史。所有task/文件/账户和进程均明确synthetic；邻接bridge测试只运行合成协议/受控loopback，未访问用户账号/真实模型。
+
+```sh
+umask 022
+node node_modules/typescript/bin/tsc -p tsconfig.host-build.json --noEmit
+node node_modules/vitest/vitest.mjs run tests/host-child-admission.test.ts tests/harness-conversation-store.test.ts tests/concurrency-runtime.test.ts tests/worker-model-control.test.ts tests/worker-run-result.test.ts tests/settings-dialog.test.tsx tests/minimax-identity.test.ts tests/minimax-route.test.ts tests/minimax-native.test.ts tests/minimax-bridge.test.ts tests/cli-account-binding.test.ts tests/core.test.ts tests/followup-queue.test.ts tests/native-harness-tools.test.ts tests/cli-settings.test.ts tests/worker-permissions.test.ts tests/worker-management.test.ts tests/harness-service-integration.test.ts tests/opencode-v2-service-integration.test.ts tests/routing.test.ts tests/dispatch-flow.test.ts tests/native-runtime.test.ts tests/agy-run-outcome.test.ts tests/native-agy-harness.test.ts tests/harness-conversation.test.ts
+pnpm --config.verifyDepsBeforeRun=false spec validate improve-worker-concurrency --strict --no-interactive
+pnpm --config.verifyDepsBeforeRun=false spec:check
+node .cache/build-host-child-admission-20261024.mjs
+```
+
+- 唯一新preview `.cache/host-child-admission-preview-20261024` build退出0，生成Remote、Host/Client bundle及postgen两端typecheck对DSH0.2.1-rc.2通过。290个src与root逐文件匹配、两语README逐字节匹配，必要AGY/Cursor/MiniMax/v2 MJS副本及emitted host-child-admission/Store/MiniMax identity/route helper齐全；五个MiniMax产品源码又与原identity-r2逐字节核对不变。旧preview/r1/r2/包/归档不覆盖，包名dsh-cliworker-now/version0.8.2不变，未pack/install。
+- 为避免不同tree digest排序混淆，本轮明确同时给两算法：JS code-unit相对路径全局升序`[path,fileSha256]`紧凑JSON的SHA256为 `5a5a0e94c11f3aea608a856518ada53cd03ee542a4cdf5cbbb160105daa20998`；每目录code-unit升序DFS的path+NUL+fileSha256+LF摘要为 `c2e9e7461ce4df627d1f55e41e97b9735411106857c90752ba78525c9b87bc22`。Host bundle `5e983fbc6bce79f979bee8938a69a1e707dd2bb9df856b22a002372bd3ba2e5e`，Client `28e1d0e7dd0e7cde9c699a1e4df7695f4f2ff79eb416af26512903bddab43d73`。helper脚本保留完整算法与输入验证。
+- strict本change及全规格31/31通过，既有migration重复ADDED的archive提示不改、不归档；whitespace通过。首轮类型只因SDK顶层不含optional settings/loader事件声明而报错，使用安装正式签名的本地declare module桥修正，无runtime Core修改。实际浏览器刷新/窄栏视觉/Windows、新候选热部署及真实目标Task仍由父会话另验，旧Host8失败不自动复活；MiniMax本轮真实目录转genericfailed尚未定根因，是另一范围，不混修、不宣称userinfo/catalog/start通过。全部本子任务jobs收齐后正式release唯一写权。
+
+### 2026-10-24 Host延期r2：混合路径候选连续性窄修正
+
+- 父会话独立复核r1的26文件1096PASS、types/290源码/包bytes后，readonly review发现严格合同遗漏：replacement候选C遇cap回滚后，同authority下一轮cold-cap的Deferred不带新candidate会丢C，再次replacement会生成C2。原实现没有重复native/绕CAS，但不满足本轮同candidate要求。r1 preview、907文件归档和backup均保留未覆盖；父会话正式停止Repo/cache写并短交本子任务唯一写权，仅修此点，不改Core/MiniMax/Host/live/模型/账号/版本/Git。
+- Runtime只增加候选选择：新error提供candidate则用新值，否则仅同authority保留上次hostWait.childId；不同authority不继承。typed cause/权限/rollback/store-CAS/定时与原队列合同不改。change补混合路径Scenario及7.1窄任务，无新增行为范围。
+- 新官方SDK AgentLoop反例实际走replacement-cap(C)→cold SDK typed-cap(无candidate)→replacement-admit(C)：等待期间原binding/retired保持、只有一次seed native；释放外provider后，第二次replacement仍C、同Worker/run且最终prompt恰一次。另两项Runtime同/不同authority反例证明正确保留/清除，不借他authority候选。定向`-t 'candidate-less|mixed replacement-cap'`为3PASS/35按选择SKIP，新增混合case约4.48秒；该case显式10秒总预算覆盖两次至少2秒冷却，不放宽现有测试或降断言。
+- 重跑上节同26文件完整命令，最终 **1099PASS、0FAIL/0SKIP、退出0，20.12秒**：Runtime28、SDK10，其余如Store16/helper7/queue81/control33/result19/UI196/MiniMax259均保留。Host noEmit类型、change strict及全spec31/31、diff --check退出0，未跑全仓或真实模型/远端HTTP。
+- 新唯一 `.cache/host-child-admission-preview-20261024-r2` 由 `node .cache/build-host-child-admission-20261024-r2.mjs` 创建，Remote生成、Host/Client bundle及两端postgen types对DSH0.2.1-rc.2通过，290src/两语README/native helpers/emitted helpers均匹配root；五个MiniMax产品源码仍逐字节匹配identity-r2，不覆盖r1，未pack/install。
+- 同上节明确算法：code-unit全局排序`[path,fileSha256]`JSON摘要 `74bafc700a4f0f35640dc680dda6a36c8f38af5c9443a5512157a11c408a7a4f`；code-unit逐目录DFS path+NUL+fileSha256+LF摘要 `7796ae5f2ac805555b53f74d92b29b9a1039a7a7f9ef9129d5fc7441f30d27c6`。Host `a1b1dec299c54f902fa0534065e9cef36dbe2c663fe8c285d4d547fd18a36011`；Client `28e1d0e7dd0e7cde9c699a1e4df7695f4f2ff79eb416af26512903bddab43d73` 与Host延期r1相同。本r2产品树只改Runtime一个文件，测试和规划/本日志另记；来源/包及线上旧source仍分开，不提前声称已部署或真实目标已审。全部job收齐及最终源/preview复核后正式交回写权。
+
+### 2026-10-24 父会话独立复验与 Host 延期 r2 热部署
+
+- 接回唯一写权后独立执行同26文件关联组：1099PASS、0FAIL/0SKIP；Host noEmit及diff检查退出0。独立逐文件核对290src、README和两个bundle，与r2报告完全一致。先前r1的1096结果及分发包保留，不与r2重复累加。
+- `npm pack --ignore-scripts`生成独立r2归档：907文件、18,235,336字节，SHA256 `a8a1b4dbf1c1408b6167f0488928031f4037be817ffa7c85ca1774507c23ece2`。解包907文件逐字节对照预览通过；未覆盖r1/身份修复归档，名称及0.8.2不变，未Git提交、推送或发布。
+- 正式全局统计和安装前进程/状态检查均为空闲，无排队/运行/停止中Worker或原生桥进程。私有备份当前profile、先前归档、并发记录及174个Worker/事件文件摘要后，用正式`dsh plugin --profile web add ... --ignore-scripts`安装；退出0。安装后Host、Client、README及包元数据逐字节符合r2，其他profile依赖未变，174个既有文件摘要全部不变，并发持久选择12未变。
+- 在再次确认globalActive/globalQueued均0后，仅更新原profile来源注释触发现有Host HMR。原DSH PID及startticks保持，无DSH重启/替代服务器/强停别的任务；正式Host maxActiveSubagents12是此前已授权、通过官方settings CAS完成的独立策略，不由插件自动跟随预算修改。
+- 新源下通过正式既有AGY Worker续聊，当前新run独立读取完整公开正文`HOST_CAPACITY_HOT_UPDATE_OK`：configured/observed均claude-opus-5-5-high，原生模型证据、high/plan、cleanup confirmed、complete且非partial，事件水位829、正文摘要`58ee994ce711be0561f3f6194fc1bb77056cd81e8a745d5bb4d43cadfcadc446`。这是真实热部署后续聊/回执健康检查，不是生产环境故意占满Host12的回退压测；Host1/2及无end/混合路径延期仍明确属于官方SDK合成集成验收。旧容量失败不改成功，不把任何原题算作已审或正确。
+- 此次Client bundle已改变并完成正式安装；原GUI仍须刷新后视觉验证，不宣称自动HMR或窄栏截图已验。MiniMax身份关口已推进至原生ACP目录错误，但该真实目录错误根因未知，尚不能宣称其目录/模型生成闭环完成。
+
+### 2026-10-24 MiniMax ACP 目录最小安全诊断候选（未部署）
+
+- 父会话在完整状态树核对、78正式release之后短交唯一源码/docs/cache写权；根/分支/HEAD保持原repo/fix/native-accounts-and-cli-adapters/16652c3，index空。上节Host延期r2的1099关联基线及正规热部署是父会话独立证据，不回退或触碰Runtime/index/harness/shared队列/CAS/Host策略/并发或其他CLI；本轮不做真实HTTP、Native CLI/其内部module/model/service，不读改真实账号/config/token/cache/log/live，不改Core，不安装/打包/重启/版本/Git动作或递归Agent。
+- 最新真实MiniMax结果仍仅是通过身份关口之后的ACP通用目录失败；不是本次HTTP一定成功，也不是目录/模型通过。静态0.6.12 mt可省model/permission/effort，15秒总预算、输出/帧/退出同样可能失败，均未被实际阶段证据确认。本轮续add-minimax-native-acp第9节窄任务，仅做诊断，不猜根因、不补控件、不增时限、不改Native配置或再审身份流程。
+- 唯一产品变化是[目录模块](../src/host/minimax-models.ts)：固定9阶段及I/O/帧/RPC/合同/缺控件/provider/模型不符/timeout/cancel/大小/退出/清理等原因；init/state仅bool，RPC code白名单-32700/-32600/-32601/-32602/-32603/-32000/-32800，exit白名单0/1/2/126/127/130/137/143，signal白名单SIGTERM/SIGKILL/SIGINT/SIGHUP，其他只other/none，row有界0–1024。不可变首错snapshot不被reader/cancel/finally覆盖，最终exit/stop/cleanup独立。原MiniMaxAccountError固定短句附安全token，无新Remote/persisted字段/日志；清理未知保留原ProcessCleanupUnconfirmedError子类门禁与独立诊断。
+- 不输出原生正文/stdout/stderr、agent/model/label/category/会话或请求ID、凭据/header/URL/PII/hash/私人来源路径、原异常stack/cause或cancelreason。成功wire、精确模型/逐模型max、严格state、15秒总时限及原受控退出接受规则不变；无原生HTTP探针或额外RPC。缺result的畸形帧保留waiter直到验证后再移除，使原等待者准确拒绝并报告首错，而不是移除后失去reject；不增加重试或接受畸形数据。
+- 新[合成诊断回归](../tests/minimax-catalog-diagnostics.test.ts)47PASS：各phase、合法稀疏控件仍拒绝、RPC各阶段/白名单、非JSON/无result/未知reply/尾片/字节行上限、timeout/callerCancel、early/异常exit、stop/cleanup、首RPC失败叠加cleanup未知、私人marker/URL/cause/原stack不泄漏，且单metadata spawn、无prompt、正常max及SIGTERM/143保持。加既有identity70/native74/route37/binding54/bridge24，最终 **6文件306PASS、0FAIL/0SKIP、退出0，11.05秒**。全部backend/frames/进程均合成，global fetch offline stub，无真实CLI或网络。
+
+```sh
+umask 022
+node node_modules/vitest/vitest.mjs run tests/minimax-catalog-diagnostics.test.ts tests/minimax-identity.test.ts tests/minimax-native.test.ts tests/minimax-route.test.ts tests/cli-account-binding.test.ts tests/minimax-bridge.test.ts --maxWorkers=4
+node node_modules/typescript/bin/tsc -p tsconfig.host-build.json --noEmit --composite false --incremental false
+pnpm --config.verifyDepsBeforeRun=false spec validate add-minimax-native-acp --strict --no-interactive
+node .cache/build-minimax-diagnostics-20261024-r1.mjs
+git diff --check
+```
+
+- Host noEmit/scoped strict/whitespace均通过；新 `.cache/minimax-diagnostics-preview-20261024-r1` 完整build/Remote/Host+Client及postgen types对DSH0.2.1-rc.2全部退出0。290src逐文件与root一致；再逐文件对上节Host延期r2，**仅host/minimax-models.ts变化**。README/package也与新preview字节一致，包名dsh-cliworker-now/version0.8.2保持；旧previews/包/材料不覆盖，本轮无全仓或npm pack/install。
+- [构建核对脚本](../.cache/build-minimax-diagnostics-20261024-r1.mjs)保留完整两种算法：相对src路径（不含src/）每层JS code-unit排序DFS，逐项path+NUL+64位小写HEX文件SHA+LF（末项也有LF），UTF8整串SHA256为 `4b2a539be5ce2eaff5f7d66c1cb66967ef3f4312d10cf51d30bf06968c6d21f6`；全局code-unit排序`[path,hexSHA]`紧凑JSON、无末尾LF，SHA256为 `6e9465e6432f9012b8db06f0405b31a73ba5ae8279b81600e7525f82f8e6d32d`。产品源码SHA256 `fdc6adc8b28fa1c2a4d538aebb4adaf4a4a7b45f0afe9f83d4c4903a57f838e5`。
+- preview Host SHA256 `a5a534f816c857a0b2d03f18570f63aba929e528e1643775eee04d3fbfe27b4c`；Client `28e1d0e7dd0e7cde9c699a1e4df7695f4f2ff79eb416af26512903bddab43d73` 与父会话刚部署Host延期r2完全相同；Remote `fe2983b185bb79c4a94be2d41150b58657e1ef802f4233d4e89dd50f7e4d08c6`，emitted models JS `f0403dd46fff19843e8f1a6d813b628d556b38e326c624ab705fb9938c94d408`，Host延期helper仍齐全。两个本轮后台jobs均exit0且output收齐。
+- 本阶段只交诊断候选。形如`[initial_state/permission_control_missing]`是设计示例，**不是已观察的真实根因**；父会话需独立关联复验与正常部署后单次正式models取安全token，再按证据修。没有因此放宽parser、提高时限、换账号或让用户盲重登。完成即正式交还唯一写权，不扩功能、归档或代勾真实目录/模型验收。
+
+### 2026-10-24 父会话部署安全诊断并取得实际 ACP 失败阶段
+
+- 接回唯一写权后独立6文件306PASS、0FAIL/0SKIP，Host noEmit及diff检查退出0。独立核290src与预览逐字节一致、全局排序JSON摘要及Host/Client摘要符合候选；对Host延期r2的产品差异确实只有目录诊断模块。
+- 独立归档907文件、18,243,726字节，SHA256 `0362907bf9a89b3b35effc1b67166371a80f69e8b6401584d7d8e2b5f4a5faec`。在全局空闲且无原生桥进程时，逐文件解包比对907文件、私有profile/先前包/并发/历史摘要备份后，以正式plugin add安装，退出0；安装后174个既有Worker/事件文件摘要全部不变，其他profile依赖不变，并发选择12不变，原DSH PID/startticks不变。再次核空闲后以profile来源注释触发现有Host HMR，无DSH重启、强停或新服务器；Client与此前版本相同。
+- 只执行一次正式MiniMax models读取，得到真实安全诊断：`[select_model/rpc_error] rpc=-32603 exit=0 signal=none row=1/4 complete=0 stop=1 early=1 cleanup=1 stdout=1 stderr=0`；protocolIs1/agentMatches/loadSessionTrue/sessionIdValid/hasModel/hasPermission/hasEffort/currentModelAdvertised/categoriesMatch/modeSupported/hasSupportedProviderRows均为1。
+- 因此本次初始化、session/new及初态严格解析已通过，并有4个支持provider的广告选项；实际失败是首次session/set_config_option模型选择收到Native internal error，后续owned退出0且清理确认。不能据此称为稀疏控件、登录失败、15秒超时或清理失败；更不能把4个广告模型算作全部可调用、已发布目录或成功生成。下一阶段仅追已证selector分支及可白名单化的原生错误，保留严格门禁，不改用户账号/默认配置、不盲重试或泄漏原生message/data。
+
+### 2026-10-24 原GUI可视验证：正常认证及宿主并发页面
+
+- 继续使用原URL `http://127.0.0.1:61060`，没有新建替代应用服务器或改动apps/web。先前浏览器因缺libasound.so.2无法启动；本次只从系统现有官方包索引下载对应libasound2t64归档，校验索引SHA256 `5d17bfb5683eb99f1be951fe48e1be5bf3c52391913b6b74a8aecf9b4f5e779f`，解包到项目ignored验证目录并仅给测试browser设置LD_LIBRARY_PATH，未安装/修改系统包或写系统Python。
+- 使用既有Chrome for Testing156.0.8078.4、独立0700测试profile及managed Node/CDP进程。按文档启动token正常兑换新测试session-cookie后注入独立browser；未复制用户既有browser-cookie、读取签名key或修改认证策略，token/cookie未输出。所有测试browser在finally结束，未动用户已有browser。
+- 原GUI正确启动，window.__DSH_BOOT__存在，标题DeepSeek Harness；1440×1050时document横向无溢出。实际截图确认Plugins原生页面显示已安装dsh-cliworker-now且开关为启用；未点击启用开关/Add/Save或更改配置。进入原生Subagent页面后，截图明确显示Subagent parallelism limit=12、Maximum recursion depth=1，Save未操作；这是官方GUI对先前正常settings CAS热修改的可视回读，不是注入假DOM。
+- 证据截图和probe仅在ignored `.cache/gui-verification-20261024`，包含本机项目列表，不入Git或公共材料。More→Settings的第一次探针没有确认设置页打开，未计通过；本次仅确认首页/Plugins/原生Subagent页面，CLI Worker自己的设置弹窗、原会话侧栏/窄屏和其余业务视觉仍未完整验证。
+
+### 2026-10-24 MiniMax select_model/-32603 固定Native错误枚举候选（未部署）
+
+- 父会话在所有子会话inactive、r1诊断正规热部署及GUI只读核对后再次短交唯一源码/docs/cache写权，Parent此后仅readonly/API；根/分支/HEAD16652c3、index和现有dirty保持。本轮不覆盖上节部署/截图事实，不动Host延期Runtime/index/harness/shared/CAS/策略/并发/Identity或其它CLI，不CLI/HTTP/原生内部module/模型/真实账号/config/token/log/live读取修改，不pack/install/restart/版本/Git写入或递归Agent。
+- 最新正式safe token已经排除初态稀疏控件/时限/帧/退出：init/初态strict及4个广告minimax rows通过，首model setter `[select_model/rpc_error] rpc=-32603 row=1/4`，cleanup=1。请求value string与0.6.12 schema吻合；不能猜wire修复、登录失败或该模型不可用。Native ACP Pg@357334将Error.message解析为error.data，或包装data.details，外层只Internal error；当前调用链是MJ→cliService→models capability→application.select，不再以Legacy Desktop handler代表全部执行。
+- 只改[目录模块](../src/host/minimax-models.ts)：仅phase=select_model且RPC严格数值-32603时附 `native_error` 和 `envelope_kind`，并随不可变首错冻结。优先data.details精确固定literal；structured只直接message/code/key，已知相互矛盾other，不trim/substring/递归解析。literal来自已核Native Um/Mp参数校验（reasoning/variant及两种conflict、thinking.effort/context_limit）与Session/selection/application/provider固定说明；SESSION_NOT_FOUND与MODEL_PROVIDER_UNAVAILABLE可映射具体大类，VALIDATION_ERROR本身不猜细项。未知一律native_error_other，envelope只有details/structured/absent。
+- 不回显任何原文/未知字段值、原长度/hash/stack/URL/路径/凭据，未新增Remote/日志/配置，也不改wire/decoder/state/Identity/effort/时限或接DesktopService目录/新HTTP。其他phase/RPC不提取且message不附新字段；timeout/cancel也不提取。成功模型/max、清理未知ProcessCleanupUnconfirmedError和首错优先级不变。编码完成不代表已修Native内部失败。
+- [合成诊断测试](../tests/minimax-catalog-diagnostics.test.ts)在原47上新增36例：10 exact literals、结构化已知/未知/冲突/generic validation、不递归/不substring/不trim、未知嵌套PRIVATE、无data和不支持envelope、非目标phase/code不提取、timeout/cancel与cleanup first-error保留；83全部通过。加原identity70/native74/route37/binding54/bridge24，最终 **6文件342PASS、0FAIL/0SKIP、退出0，12.75秒**。所有frames/backend均synthetic、fetch offline stub，无实际网络或CLI。
+
+```sh
+umask 022
+node node_modules/vitest/vitest.mjs run tests/minimax-catalog-diagnostics.test.ts tests/minimax-identity.test.ts tests/minimax-native.test.ts tests/minimax-route.test.ts tests/cli-account-binding.test.ts tests/minimax-bridge.test.ts --maxWorkers=4
+node node_modules/typescript/bin/tsc -p tsconfig.host-build.json --noEmit --composite false --incremental false
+pnpm --config.verifyDepsBeforeRun=false spec validate add-minimax-native-acp --strict --no-interactive
+node .cache/build-minimax-diagnostics-20261024-r2.mjs
+git diff --check
+```
+
+- Host noEmit、scoped strict与whitespace退出0。全新 `.cache/minimax-diagnostics-preview-20261024-r2` build/Remote/Host+Client及postgen types对DSH0.2.1-rc.2全0；290src逐文件匹配root，另与旧diag-r1逐文件比较仅host/minimax-models.ts变化，README/package一致，dsh-cliworker-now/0.8.2不变。旧r1/包/backup及父会话新GUI材料保留，不覆盖/清理，未全仓或打包/安装。
+- [r2构建核对脚本](../.cache/build-minimax-diagnostics-20261024-r2.mjs)保留精确两算法：每层code-unit排序DFS相对src路径+NUL+文件64位小写hexSHA+LF（末条有LF），UTF8聚合SHA256 `cdca03c70803c4ea53eb364bbbcc283a37350e38663b6a3a7789ca0672edd0c0`；全局code-unit排序[path,hexSHA]紧凑JSON无末LF，SHA256 `cd0ee9f87f95514a01e0e1bbb0bff98e963183045d7bdee5ae2dd7293648fe6c`。产品源码SHA `10c0f7cd1bf7bf72fc0e370456723e6d2480ebf9ba1edc1b4a980cc5ef9d666e`。
+- preview Host SHA `c467f7dda2d380b819f1272de4c7566c61e24d7a97e9ea8433c2faef7f434a39`；Client仍 `28e1d0e7dd0e7cde9c699a1e4df7695f4f2ff79eb416af26512903bddab43d73`，Remote仍 `fe2983b185bb79c4a94be2d41150b58657e1ef802f4233d4e89dd50f7e4d08c6`；emitted models `a484152b328951d5dbab59edc40784f0dc3206bb6f162a734f582bfce77eead3`。三个本轮后台jobs都exit0且output收齐。
+- 本候选只让父会话下一次正式models得到固定枚举，再按实证处理；param_*等例名不是已观察到的当前根因，不修猜测Native bug或把失败row判不可用，不转新目录路线、不代勾目录/模型真实闭环。完成即release唯一写权，不继续扩大任务。
+
+### 2026-10-24 父会话 r2 正式诊断实测与官方/上游对照
+
+- 独立同6文件342PASS、0FAIL/0SKIP，Host noEmit/diff检查退出0；290src、限定产品差异与r2 bundle指纹全部复核一致。新归档907文件、18,245,954字节，SHA256 `0962c14504f99e8e18e77566ed979e322ddc06f600527664b7c25fb1e389394a`。在正式全局空闲及无原生桥进程时备份并plugin add安装，逐文件复核907包与预览、174个历史文件摘要不变，其他profile依赖及并发12不变，原DSH PID/startticks不变；再次核空闲后仅来源注释触发既有HMR，无重启。旧候选和回滚资料均保留。
+- 下一次正式MiniMax models真实返回 `[select_model/rpc_error] rpc=-32603 native_error=param_reasoning envelope_kind=details`，row1/4、exit0、cleanup1，初始协议/session/全部控制项与currentModelAdvertised检查仍全部1。这证实固定原生literal为Invalid model reasoning，不是身份、超时、退出或max档位未知；尚未发布目录或执行模型prompt，不计作模型可用验收。
+- 用户明确要求多参考网络和CLI Worker上游、增加mmx真实调用且无需担心额度。后续继续原生正式选型/权限流程，不拿合成数字替代真实模型、强度、产物、续聊和停止证据；不把额度许可当授权绕过认证或安全门禁。
+- 网络已实际读取[MiniMax官方ACP文档](https://agent.minimax.cn/docs/cli/integrations)，确认mcode acp/stdin-stdout/模型与Plan控制；并对照[官方仓库固定提交](https://github.com/MiniMax-AI/minimax-code/tree/da22f11c55d4748155d7162c1030414228a00565)的product-access/model-provider-application/model-ref。已列公开tags最高v0.6.5，而本机0.6.12，必须与本机bundle核对，不能把公开main当安装版本完全等同。
+- 官方及本机源码均排除own reasoning:undefined本身非法；未定义才跳过type检查，ACP模型选择也没有发reasoning或max。相同Invalid model reasoning还会由forced_on/forced_off与所选variant派生boolean冲突、缺失/disabled的legacy thinking变体触发。因此当前可确定是该校验分支族，仍不能无证据猜哪个具体广告配置、宣称字段编码错或随意补false/high。
+- 实际CLI Worker上游为[SuperWheel/dsh-cliworker-now](https://github.com/SuperWheel/dsh-cliworker-now)。其[native-acp选择实现](https://github.com/SuperWheel/dsh-cliworker-now/blob/main/src/host/native-acp.mjs)在验证广告值后，精确currentValue相同就不发setter；没有现成MiniMax实现可冒称直接复用了完整适配。另读[公开mcode-mcp实现](https://github.com/minmax/mcode-mcp)：README明确仅验证0.5.9，其acp-query只session/new读取广告目录、不循环切换所有模型，transport只在明确model override时选模型；无variant时保留current变体以避免静默翻转reasoning。这个对照说明目录读取与执行选择应分清，仍不构成本机0.6.12完整兼容证明；不照抄其默认full权限、allow-always、上下文配置写入或取消成功处理。
+
+### 2026-10-24 MiniMax 已验证配置子集与精确当前值功能候选（未部署）
+
+- 父会话核全树inactive并短交唯一src/docs/cache写权，Parent其后仅readonly/liveAPI。保留上节342独立复验/diag-r2部署/实际param_reasoning/官方pin和上游比较/用户实测授权及GUI全部记录。当前不是猜undefined/max或登录；只有某原广告配置受reasoning策略拒绝，不能据此称全model不可用。本轮续change第11节，转功能而非再一层诊断；不触Host延期、Runtime/index/harness/shared/CAS/Hostpolicy/Identity或其它CLI，不调用真实CLI/HTTP/Native内部模块/模型，不读改真实配置/凭据/profiles/history/log/cache，不pack/install/restart/版本/Git写入或派生Agent。
+- 产品仅3文件：[目录](../src/host/minimax-models.ts)仅对pending方法set_config_option/configId=model/当前owned session/本轮初始广告exact值及当前row全匹配、select_model数值-32603且exact param_reasoning，局部reject私有class，不调fail/terminate、不污染全局rpc/native；loop只catch此class。下一tuple前同child/source/原15秒内新建干净owned空session，ID不得复用，strict重核完整初始广告ID集合（order/labels不当authority）。每tuple一次、session数≤原支持配置N，无prompt、默认改写或历史清理，可能留下有界多个空会话。mixed result+error即使reasoning且已有verified项也fatal。
+- catalog使用严格Native exact-current model回执no-op，否则set+strict确认；只采该model当前真实effort，拒绝配置不填default-only、不复制max。至少1项才返回私有{models,notice}；[adapters](../src/host/adapters.ts)仅MiniMax分支接现有notice，明确广告N/verifiedX/精确reasoning拒绝Y，只是验证子集、不是全model不可用，无shared/Remote扩面。未知RPC/late reply/新后态漂移/广告变化/来源变化/限额/取消/exit1或清理未知均整份废弃，首fatal仍冻结。
+- [专用配置](../src/host/minimax-state.mjs)target先广告有效，exact current model才跳冗余setter；再核该model effort支持，nondefault且exact current effort相同才跳，否则仍set+confirm。fresh Ask permission setter与最终model/effort/default mode漂移检查保持，Plan等未开。shared native-acp不改；不猜补false/on/high或改opaque编码。
+- 新[subset/configure合成组](../tests/minimax-catalog-subset.test.ts)37PASS，覆盖毒化旧session后fresh、同model另一variant保留/max、全拒绝/零verified、广告全集变化/ID复用/标签顺序、后态/late reply/未知码/非目标phase、局部拒绝后fatal快照干净、partial后exit1/cleanup/cancel、单次原15000ms deadline。原diagnostic83覆盖保留（其中精确reasoning现按授权返回明确子集）；native新增adapter notice/partial source漂移2例为76，bridge新增Node synthetic exact-current/max禁止冗余setter1例为25，连identity70/route37/binding54，最终 **7文件382PASS、0FAIL/0SKIP、退出0，11.67秒**。前一轮379PASS为mixed-frame等3反例加入前结果，不重复累加。所有CLI peers均synthetic，fetch offline，不能冒称mmx真实验收。
+
+```sh
+umask 022
+node node_modules/vitest/vitest.mjs run tests/minimax-catalog-subset.test.ts tests/minimax-catalog-diagnostics.test.ts tests/minimax-identity.test.ts tests/minimax-native.test.ts tests/minimax-route.test.ts tests/cli-account-binding.test.ts tests/minimax-bridge.test.ts --maxWorkers=4
+node node_modules/typescript/bin/tsc -p tsconfig.host-build.json --noEmit --composite false --incremental false
+pnpm --config.verifyDepsBeforeRun=false spec validate add-minimax-native-acp --strict --no-interactive
+node .cache/build-minimax-validated-subset-20261024-r1.mjs
+git diff --check
+```
+
+- 最终Host noEmit/scoped strict/whitespace均退出0。新 `.cache/minimax-validated-subset-preview-20261024-r1` 完整build/Remote/Host+Client/postgen types对DSH0.2.1-rc.2全0；290src逐byte等于root，相对diag-r2仅adapters/models/state上述3文件不同，其它全部保留；README/package也一致，dsh-cliworker-now/0.8.2不变。特别将runtime lib/minimax-state.mjs及types/host副本逐字节对Root新no-op helper，避免仅Host更新而真实child仍旧配置逻辑。旧diag r1/r2/previews/包/rollback/Parent材料不覆盖，未pack/install。
+- [functional构建核对脚本](../.cache/build-minimax-validated-subset-20261024-r1.mjs)明确两tree算法：每目录JS code-unit排序DFS，相对src路径+NUL+64位小写file HEX SHA+LF（末条有LF）UTF8串SHA256 `a99396dd61433d382294a18534666207e6cb4b85370f961df090ac7bc0652f3b`；全局code-unit排序[path,hexSHA]紧凑JSON无末LF的SHA256 `e74f50416bb5e2dc3142943d99913bdc609630785f75f917f69fb916ea8aa449`。
+- preview Host SHA `dbe74373374ad85c341886f775cc7133f5fa0dddabbff2230b37bc9c4a7da0c6`；Client仍 `28e1d0e7dd0e7cde9c699a1e4df7695f4f2ff79eb416af26512903bddab43d73`，Remote仍 `fe2983b185bb79c4a94be2d41150b58657e1ef802f4233d4e89dd50f7e4d08c6`。源adapters SHA `37ad85c811fc1a978670602d1a7ab6286fb3083fa83ce3af465d2b9a7466067e`、models `d206a06c98861f63466c9cb8adb54f0ac018b573ce2660abac18a40fb5b69e5f`、state `87afb64914005a5ecf45812f0eb350d9f8fe1f9cc96afeb5234343a0dbe80de8`；state两个出货副本同此hash，emitted models `637e3473fc5fbb3019f7b4eb0591c922f9762cdc5301bc660a93feb1588d189e`，Host延期helper仍齐全且不变。
+- 本轮3后台jobs均0且output收齐，分支/HEAD16652c3/index空保持。完成立即正式release唯一写权。Parent接手后独立关联验收/正规idle包部署，并立即正式models→原生首次选型→真实生成/编码产物/强度/续聊/停止；不是拿此382或任务勾选称目录/模型闭环，不自动开放尚未支持的Plan/工具能力。
+
+### 2026-10-24 父会话功能包实测、来源后验与环境副本防护
+
+- 父会话独立7文件382PASS/types0，290源码及两个实际出货state副本核对一致；functional-r1归档907文件、18,249,890字节，SHA256 `c33550a094547bb2d5b0b8213257a79b12b014073ac6705dd956934ab1669698`，907解包文件逐byte一致。实际有其他Root在途AGY工作，未停其任务。一次人工空档后新准入抢先，安装前guard正确退出1且未建backup/未安装；随后改成event-driven连续空闲3秒后立即正规备份/plugin add。在正式空档完成r1安装和HMR，268个历史文件摘要全不变、其他依赖及budget12不变、旧runtime native文件保留、DSH原PID/startticks不变。
+- r1正式models已通过原先首row reasoning拒绝的位置，但在discover的账号来源后验停住，未发布目录或执行模型prompt。一次明确cold/warm对照及一次与固定文件比较同步的正式调用均仍失败；不是盲目重登。25秒受控窗口只比较8个固定来源文件的内容/叶stamp，未打印内容/凭据/hash：配置、region偏好、cn auth-state/auth均存在且完全不变，cn identity-cache及en三项均前后不存在。不能据此宣称Native写了cache或token发生变化。
+- 另用本项目emitted账号模块做identity-only立即前后基线：受限userinfo确认before主体，普通本地after缺principal但source全部相同，sameSnapshot=true；没有启动CLI或模型，凭据/身份hash未输出。后续纯本地summary仍是稳定身份待userinfo，不是原生续期或认证未就绪。因此已排除缺after.principal本身、普通成功投影WeakMap漏登记及当前默认来源过期这些猜测；尚未取得实际Host guard失败的具体布尔项，未删epoch/来源/ABA检查。
+- Parent追加第12节最小别名防护：只给metadata spawn传source.env副本，避免进程后端扩展传入对象时污染账号快照。新增frozen env+原地附加synthetic marker的确定反例；同7文件最终383PASS、Host noEmit/strict/diff0。该反例证实保护必要，但未证明Core实际原地修改；实际Core native-process及subprocess-local两层均观察到clone，不把假设当根因。
+- 新functional-r2由隔离脚本构建、Remote/Host/Client/postgen全部通过，290src对r1仅models一处env spread差异。全局排序JSON源码摘要`33e8a93e1c6b0e8671944e0aad9c6c387d84a5314711cfd3bbd72d2cde47a883`，DFS摘要`82efd9d311a422dc252f352215e5ee19429bae9488cfb0eefaaccc28f06f2b49`；Host `44d1cdfd0feca78bbb89bc50b12fc1cfbe0b2e5a8378435d548670a916cd592d`，Client/Remote/state helper均保持r1。
+- r2归档907文件、18,249,901字节，SHA256 `49e0871f1dc2be9e97609529a2374f483787be906a12e919c35d357b47664d0e`，完整907文件独立核对。event-driven空档正规安装后270个既有文件摘要全不变、其他依赖/budget/PID不变，正式HMR后models**仍为账号来源后验错误**。本r2是已部署的防护，不是已解决实际根因。不要把383、33勾选或这些零prompt目录探测称为成功模型调用。
+- 已准备父会话独立编写的隔离Node验收测试和重叠图参考算法，尚未由mmx创建实现或运行；计划的真实生成/代码产物/强度切换/续聊/停止仍待目录门禁修复和插件首次原生选型。真实用户源/身份检查继续保留，不换账号或凭据、不猜模型、不自动放宽Plan/工具能力。
+
+### 2026-10-24 配置同内容原子保存：稳定绑定与私有操作版本（功能候选，未部署）
+
+- Parent随后保持sameSnapshot原授权表达式不改，增加私有版本parts/固定分类，独立390PASS并正规idle备份/HMR；实际正式models已证snapshot=source-configuration。Parent另在Host进程环境只白名单定位而不输出值，确认Host/shell/default Home指向同一原生root。新的25秒受控正式调用观察到**config raw及语义完全相同、dev/size/mode/nlink/uid/gid不变、inode/mtime/ctime变化**，属于同内容原子替换。因此旧25秒窗口不能继续用来证明本次配置戳不变，不能回退为未登录、缺after.principal、泛clone/expiry或已证Core env突变。
+- Parent明确重交唯一src/docs/cache写权，只在MiniMax修内容与物理版本语义，不新增API/泛框架或降认证。[账号模块](../src/host/minimax-accounts.ts)现在source.configuration与稳定binding route只含安全读取并过既有route parser的**完整raw bytes SHA**，不截取已知字段，也不把inode当账号ID。私有sourceConfigurationEpochs WeakMap及每root最多64的last-config LRU只存无token FP/stat/UUID：同raw同stamp或同raw、新inode、相同dev/size/mode/nlink/uid/gid且既有安全检查成功时继承epoch并更新observed stamp；其它触碰新版本，缺失/unsafe read清root，淘汰后只会安全拒绝旧操作。配置内容先观察再拒不支持route，已观测API等B不能被恢复A隐藏。
+- readOwn双source在JSON之外还核私有配置epoch，proof.epoch含该epoch，成功userinfo clone继承parts；sameSnapshot授权表达式仍原样。新增固定source-configuration-version，不输出版本值。state/credential/cache指纹+全戳不归一化，真实raw/route变化照旧拒绝。稳定A恢复A的binding应相同，更新旧两组测试里三处把inode混进binding的断言，但metadata跨in-place A→API→A仍拒。
+- **诚实检测边界**：最终快照不能证明原子替换由哪个进程写入，也不能完整识别有目录写权限者未观测的atomic A→B→A；测试明确展示新inode场景可通过，不再宣称完整配置文件事件溯源或所有atomic ABA检测。若OS复用原inode，则按同inode戳变保守拒绝，不为使测试过而放宽。现有state/credential/cache戳规则完整保持，无新增权限/Native补丁/OS sandbox、复制配置/凭据、切数据根或守护/watch机制。
+- 静态Native0.6.12 writer已定位到已安装chunk-5ADYFF2U.js:3292的F0@2945823：读旧raw并计算更新，但未对相同结果作短路，仍调用$ce@2949105；$ce同目录.config-tmp-随机，open wx/0600→writeFile→chmod→close→rename到目标，非原地写。另一X3模块ot@182225是fchmod/ftruncate/write的原地writer，startup现存配置kt只在group/other权限非零时chmod。没有确认本次ACP究竟哪个上层caller触发F0，不能宣称每次new/list必然保存；未找到可当作公开CLI契约使用的no-persist/config-readonly开关，内部configSource依赖注入不是合法CLI flag，不猜参数/不执行Native模块。
+- 新合成覆盖：同内容atomic后sameSnapshot=true及稳定binding、updated stamp后in-place拒绝、actual atomic内容变化（含非route字段）、in-place ABA、已观测unsupported atomic B恢复A、未观测atomic ABA边界、missing/unsafe清ledger、安全mode变化不归一化、userinfo clone版本继承、state/credential/cache同内容atomic仍拒、65 roots驱逐只拒不授，以及Native-like metadata过程atomic save后目录/max保持。原390对应7文件基础全保留；新增identity14+native1，最终 **7文件405PASS、0FAIL/0SKIP、15.01秒、退出0**。独立identity/native168与Host noEmit也0；所有CLI peers/文件/HTTP Responses均synthetic，无真实CLI/HTTP/模型调用。
+- 首轮405中唯一失败是未观测atomic ABA反例在两次rename之间复用旧inode，产品按要求正确拒绝；夹具以只读fd保留旧inode，确保最终确是新inode，再验证快照限制。未改产品来迁就反例。后续168和最终405全绿，失败已调查，不隐藏或当通过。
+
+```sh
+umask 022
+node node_modules/vitest/vitest.mjs run tests/minimax-catalog-subset.test.ts tests/minimax-catalog-diagnostics.test.ts tests/minimax-identity.test.ts tests/minimax-native.test.ts tests/minimax-route.test.ts tests/cli-account-binding.test.ts tests/minimax-bridge.test.ts --maxWorkers=4
+node node_modules/typescript/bin/tsc -p tsconfig.host-build.json --noEmit --composite false --incremental false
+pnpm --config.verifyDepsBeforeRun=false spec validate add-minimax-native-acp --strict --no-interactive
+node .cache/build-minimax-atomic-config-20261024-r1.mjs
+git diff --check
+```
+
+- 新[隔离构建脚本](../.cache/build-minimax-atomic-config-20261024-r1.mjs)目标 `.cache/minimax-atomic-config-preview-20261024-r1`，完整build/Remote/Host+Client/postgen types对DSH0.2.1-rc.2全部0，290src逐byte等root，相对Parent已部署classification-r1仅accounts一个产品文件不同；README/package一致、包名dsh-cliworker-now/0.8.2不变。两个真实出货minimax-state副本逐byte同root，仍`87afb64914005a5ecf45812f0eb350d9f8fe1f9cc96afeb5234343a0dbe80de8`；旧previews/归档/rollback/Parent资料保留，未pack/install。
+- 源码树算法保持：每目录code-unit排序DFS、相对src路径+NUL+hexFileSHA+LF（末条也LF），整串UTF8 SHA `90bfc547a36451ee7276551274ad90426e8b80a06e9a2f7351872590b273fe78`；全局code-unit排序[path,hexSHA]紧凑JSON无末LF SHA `add3496677f064e6ea8a1e9fe3185f8c0712caadf593e4eaf0ff5a5ed9313693`。源accounts SHA `44c36ac53ff67609d81e5752050743b211d257b5a951d4be6156fb4b9615779f`；Host `6d28be8ae0bde3ad35a471fe37dce9e55eee3430fce4f194529a0cccc2c0383b`；emitted accounts `a2d0533c9d6b6233db6539a99ee9ae81e3ab6d68c335ce111eee55d1b53616f2`；emitted models仍`e4f14dfeecde821ea3f6d4b5a26f5aaec1a96915e6f2853179bf230398efb052`，Client仍`28e1d0e7dd0e7cde9c699a1e4df7695f4f2ff79eb416af26512903bddab43d73`、Remote仍`fe2983b185bb79c4a94be2d41150b58657e1ef802f4233d4e89dd50f7e4d08c6`；Host延期helper仍齐全不变。
+- Host noEmit/scoped strict/diffcheck/index空均实际0；本轮3后台jobs（168/types、405、build）output收齐且0，无运行job。只改1产品source、2测试及原change/README/design/tasks，不改Core/runtime/index/shared/Identity/其它CLI，不读实际用户配置/auth/token/profile/history/log/cache，不执行CLI/HTTP/Native私有模块/模型、打包安装、版本/Git写或Agent派遣。完成即release唯一写权，Parent接独立验证、正规idle安装后立刻普通models/start原生首次选型与真实任务；不以405或勾选宣称实机模型已过。
+
+## 2026-10-24 AGY重新登录后的原生email身份兼容修复
+
+- 审题父会话获用户明确授权，在原写者已暂停后接续最小修复，保留本分支全部既有dirty；没有提交、推送、发布、改版本或DSH核心。仅核原生登录文件的字段/类型，不输出凭据或账号值。当前consumer格式保存`id_token_email`及opaque access/refresh token，不再保存ID-token JWT；旧绑定只依赖JWT，造成原生CLI可用而插件误报无法确认自身账号。
+- 产品只改[账号绑定](../src/host/cli-account-binding.ts)和[身份摘要](../src/host/account-identity.ts)：优先保留旧principal，同一当前consumer文件中经`accountEmail`验证的字段作为兼容fallback；仍须存在有效或可续期凭据。原路径、文件安全、第三方路由、模型授权、账号变更及宿主权限检查保持，不借旧jetski登录，不为email单独放行，不改账号/模型/权限/并发设置。
+- 直接运行现有Vitest，两关联文件**69/69通过**：覆盖新格式、轮换稳定、账号变更、无凭据、恶意email与非consumer拒绝。首次`pnpm exec`触发依赖自动重装并因无TTY拒绝，未强制/删除模块；改用已安装runner完成测试。
+- [隔离构建](../.cache/build-agy-native-email-20261024-r1.mjs)先核当前已安装Host等于atomic-config基线，再逐源码确认仅上述两文件不同；完整构建及Host/Client类型检查通过。候选[构建证据](../.cache/agy-native-email-preview-20261024-r1/agy-repair-build-proof.json)确认只6个生成文件改变，Client/Remote逐byte不变，Host SHA256 `d065fb1b75a673d238a68982b9d92f5f67c5b89b9e50fedcf988de658036e5cb`。
+- 正式工具确认全局active/queued均0后，[安装脚本](../.cache/install-agy-native-email-20261024-r1.mjs)先备份旧6产物及profile来源配置，核对基线并只复制该6产物；随后只改既有profile来源注释触发正常HMR，没有重启进程。正式`cliworker_models`恢复，已确认的Argon High选择保留；随后**5个用户既有审题任务真实完成**，对应公开结果均native observed/configured匹配、完整正文、cleanup confirmed。首次并发准入另有3个超时，核实无Worker后逐个恢复了2个，剩余任务未成功，不将其计入完成或误称认证再次失败。
+- `agy-lxy`是用户的隔离HOME shell函数；本修复未增加其账号选择能力、未切换账号，也未根据套餐百分比推测绝对可用额度。该修复仅恢复现有原生账号契约，不扩大为认证系统重构。旧预览、回滚材料与历史记录全部保留。
+
+## 2026-10-24 条件派遣的已确认设定失效后重复选型（隔离候选，未部署）
+
+- 本轮按用户及父会话授权作为唯一产品写者，沿原分支工作；全部既有 dirty（含前节 native-email 两源码/两测试）保留，不建分支/worktree、不提交/发版/重启、不改物理审题源或 HTML。先加载 harness/tool/git/asmgr，核用户及仓库规则、原会话树与既有构建/安装脚本；asmgr 提示部分 job/image 事件未解释，树的最后观察时间不当作运行状态。
+- 可证事实：实际已确认记录的 parent/project/CLI 均正确、policy=1、role 明确为 null、模型为精确 high 变体；同父作用域不包含 goal round，configure_conversation 保留 role。纯本地只读比对显示该记录与最后四个成功准入 Worker 的绑定一致，但与当前原生 consumer 文件计算的绑定不同；Host/shell 的 HOME 与 DSH_HOME 来源一致。没有输出账号、凭据或绑定值，没有执行 CLI/网络/模型。旧主体只有单向绑定，**不能据此断言真实换号、同主体表示变化或旧进程回写，更不自动迁移/复用旧授权**。
+- 确定缺陷：[Host](../src/host/index.ts) 的 expected_model 原先只在 chooseDispatch 返回后校验。chooseDispatch 把已有确认的账号/模型/强度失效转成完整重选；即使调用携带“仅按既有精确模型启动”的前置条件，也先产生模型/角色卡并可能覆盖确认后才拒绝。并发者在同作用域锁后等待，可放大为多个入口长时间挂起。此分支由 mock 确定复现；历史四次 1800000ms 无 Worker/run/job 回执不算已执行，也未取得足够问题卡生命周期证据将所有历史 timeout 都归因为此。
+- 最小补丁只改 [index.ts](../src/host/index.ts)：start 把 expected_model 传入选择入口；**已完整确认且提供该前置条件**时，先检查精确模型，目录查询以该确认的账号绑定为 expected，账号/目录/强度/变体失效即明确拒绝，不进入新的选择卡、不写设定、不创建 Worker/job/prompt。缺少本父确认仍走首次或新父沿用流程；无 expected_model 的真正账号/模型变化仍走原有原生重选。保留实时目录/最终授权、权限、取消、并发锁、角色快照及账户绑定边界，不新增默认角色或自动回答。属于既有条件准入契约的前移，不改变普通选型协议。
+- [模型控制测试](../tests/worker-model-control.test.ts) 新增 9 项：账号/模型/强度/变体四类各四并发失败不产生卡片/任务且锁清理；显式无角色经 configure_conversation 改为 high 变体后、同父新 Agent 对象及四并发重复 start 不问；新父仍问沿用；首次仍问且 expected_model 不代选；目录后换号拒绝；AGY 条件失败不影响同父另一 CLI 的首次原生选型。原 dispatch-flow 的 25 项继续覆盖普通换号重选、首次、作用域、角色缺失、取消/迟到答案/关闭、并发及 Host storage 重开。
+- 红绿证据：新增前四项在原源码全部失败，分别确实调用 1–2 次 mock ask；合法 null/high/同父复用及新父确认原码已通过，不将它们误报为本次新修复。最终 5 文件 **139/139 PASS、0 FAIL/0 SKIP、退出0**，其中 native-email 原有关联 69 项保持。构建及 Host/Client typecheck 均退出0（DSH 0.2.1-rc.2），既有 add-agent-worker-model-control change 严格校验及 diff 检查退出0；未执行全量、真实 UI/账号切换/CLI 模型验收。
+
+```sh
+node node_modules/vitest/vitest.mjs run tests/worker-model-control.test.ts tests/dispatch-flow.test.ts tests/role-dispatch.test.ts tests/cli-account-binding.test.ts tests/account-identity.test.ts --maxWorkers=4
+node .cache/build-conditional-dispatch-20261024-r1.mjs
+pnpm --config.verifyDepsBeforeRun=false spec validate add-agent-worker-model-control --strict --no-interactive
+git diff --check
+```
+
+- 按前节正规隔离流程生成[构建脚本](../.cache/build-conditional-dispatch-20261024-r1.mjs)及[证据](../.cache/conditional-dispatch-preview-20261024-r1/conditional-dispatch-build-proof.json)。构建前核 live Host 等于 native-email 基线，290 源码相对该基线只有 host/index.ts 不同，构建后源码逐 byte 一致。Host SHA256 `4408fe79e0b6060efc48d3ac2fd0b53960443427e8cedc6ebc647d424a90f20d`；实际 9 个生成文件变化，列表及前后 SHA 均在证据内。Client、typert.host/remote-client 的 JS 逐行比对仅有 50 个 sourceLocation 行号随 Host 行位移，不宣称其字节未变；source maps 随之更新。其他源码、native helpers、manifest/版本和原生 email 修复均未改变。
+- 候选交接时未写正式 lib/profile、未触发 HMR；由父接手独立核验与部署。当时本地账号绑定不符须保持拒绝，不迁移授权或让用户为消除卡片重选。
+
+### 2026-10-25 父独立验收及正式本地安装
+
+- 父亲读唯一产品source diff，独立重跑上述5文件：139/139 PASS，退出0。核9份候选/已安装基线SHA及测试输入SHA；Client/两个typert JS按实际sourceLocation对象结构归一化后相同（各50处行号）。第一次核验错误地按数组写regex导致失败，随后读真实diff纠正；不是发现或掩盖额外业务变更。
+- 两次正式只读并发查询均globalActive/globalQueued/parentActive/parentQueued=0，未改limit12。用[限定安装脚本](../.cache/install-conditional-dispatch-20261025-r1.mjs)仅复制9份已核产物，安装前全部备份在`.cache/install-backups/conditional-dispatch-20261025-r1`并保存installation-proof.json；不覆盖整lib、不改账号/偏好、未提交或发布。
+- 当前61060对应的Web Profile路径已核；仅更新profile既有HMR注释触发正常重载，未执行重启或启动新服务器。PID仍38589；未认证HTTP探针为401，只证明原认证入口仍在，不当作浏览器页面通过。没有承诺Client源位置元数据无需刷新即时变化，本修复业务逻辑在Host。
+- 正式API验收：models仍firstSelectionConfirmed=true、Argon-high/high；真实未核题7697188241703030538直接准入为agy-154（worker5efb99a8-d649-41a8-83a7-d6924058c65d，run3ec2096e-cd4e-4268-9192-b28d137039a5），后正常completed，公开正文整页收齐，observedModel=gemini-4-argon-high/native、partial=false、cleanup=confirmed。另以不可能的expected_model作一次拒绝边界测试，立即返回本补丁新增的“预期模型与本会话已确认选型不匹配；请先显式配置，未创建 Worker”，没有新Worker/模型执行或重新选型。这直接证明新Host入口已生效，不能只以磁盘SHA替代加载证据。
+- 当时本地绑定不符与此次正式准入通过分开记录，不追溯断言真实换号或旧进程回写，不修改绑定。此次正常任务证明当前这一次可执行，不保证全部后续任务/所有历史timeout均已解决；真正账号变化仍守原边界。
+
+## 2026-10-25 Cursor ACP 结果与权限保守投影
+
+- 继续接手当前 dirty 分支，未提交、推送、发布、改版本或重启 DSH。新增 `src/host/cursor-outcome.mjs`：只识别已核实的 `\n\nError: ` source-shaped 诊断；同文保留为 UNCERTAIN，不扫描普通 error 词、JSON、read 内容或 stdout。工具只接受同 session、已关联 ID 的独占 `error`、`rejected`、`permissionDenied` 或已识别命令的安全整数非零 `exitCode`；公开 detail/output 使用固定摘要/安全内容，不投影原始私密错误。
+- `native-acp.mjs` 增加可选 Cursor 专用 tool projection/finalize 钩子，其他 ACP 默认不变；`native-cursor.mjs` 启用 `rejectClientRequests: true`，未知原生 client request 回 -32601 后不继续报成功；helper 已加入 build 清单。
+- 合成回归新增 `tests/cursor-outcome.test.ts` 4项，并扩展 Cursor ACP 未知 client request；定向 **4文件103/103 PASS**，Host/Client typecheck 通过，`build:preview` 隔离包成功且包含 root/types 两份 `cursor-outcome.mjs`。既有 Cursor 真实首轮/续聊与工具文件验收另列：新安装候选下 grok-4.7 原生 `CURSOR_NATIVE_FIRST_OK`、同会话 `CURSOR_FOLLOWUP_OK`，configured/observed/native 一致、cleanup confirmed；accept-edits 原生创建 `.cache/cursor-native-acceptance-20261025/canary.txt`，独立字节核验为 `CURSOR_NATIVE_WRITE_OK\n`。这些真实结果不替代负向 auth/billing/source-shaped 或所有原生权限请求验收。
+- MiniMax 同期已按精确目录实际验收：M3.1-Flash thinking/max 首轮 `MMX_REWRITE_CANARY_OK`，同会话续聊 `MMX_REWRITE_FOLLOWUP_OK`；切 effort high 后 `MMX_EFFORT_HIGH_OK`；切换到精确 `m:minimax:MiniMax-M3:v:`/default 后 `MMX_MODEL_M3_OK`，每轮 configured/observed/native 一致且 cleanup confirmed。模型实际创建的 `merge-intervals.mjs` 经独立复制到验收目录，父侧未修改 acceptance 测试（SHA `61378f7c1e7784f295031c21c950e5d9b6f2e93887aaaa6e95fc03d8b2939f65`），Node 验收 **104/104 PASS**；首个跨工作区绝对路径写入被权限网关正确拒绝，改用 Worker 工作区后成功，不把失败冒称模型故障。
+- Cursor outcome 候选已通过独立 `dsh plugin --profile web add` 正式热安装；安装前记录354份Worker/events，安装后变化0，依赖/并发12/DSH PID38589及startTicks761921未变，备份在`.cache/install-backups/cursor-outcome-20251025`。profile注释触发HMR，已核安装 `lib/cursor-outcome.mjs`、更新 `native-cursor`，未重启宿主。安装后 `cliworker_models(cursor)` 仍读到原生目录；grok-4.7 实际首轮 `CURSOR_OUTCOME_HOT_OK`、同会话 `CURSOR_OUTCOME_HOT_FOLLOWUP_OK`，accept-edits 工具创建 `.cache/cursor-native-hot-20251025/canary.txt`，独立字节为 `CURSOR_HOT_TOOL_OK\n`，均 configured/observed/native 一致、cleanup confirmed。长文本停止边界本轮在授权准入期间未真正中断运行；随后正常长文本完整到500并分页读完，不能写成运行中stop通过。
+- Kimi 2.2 的当前模型目录可读取，但按用户授权尝试 `kimi-coding-plan/k3-256k` 首轮在原生执行前返回 `Authentication required`，observedModel unknown、cleanup confirmed；不重试、不清配置、不把目录当生成成功。OpenCode v2 查询仍安全拒绝“原生版本暂不支持或无法确认”，没有回退旧认证协议。`pnpm test` 全仓本轮为 **4997 PASS、16 FAIL、17 SKIP**；失败集中在既有并发测试 fixture 的 `maxConcurrent:0` 与当前1..12 schema不相容、以及多份 symlink 安全测试的文件 mode 受当前环境 umask 影响，Cursor 定向回归仍 **103/103 PASS**，未把全仓失败隐藏为通过。
+
+### 本轮复核更正与参数化派遣（2026-10-25）
+
+- 上述Cursor outcome并未达到P0：独立只读审查确认零exitCode误报待核实、title猜工具、去重前观察、歧义升级和成功输出丢失等缺口。全局active/queued0时已撤下workspace及live `native-cursor` 的tracker接入；保留已测 `rejectClientRequests:true`。common ACP可选hook和build出货清单已恢复本轮前行为；helper源码/4个基础测试仅保留为未接入草稿，不再出货，4项change任务恢复未完成。旧正向canary只证明正向路径，不能证明这些负向分类正确；下次不能重装含缺陷的旧outcome归档。
+- 之前全仓16失败已调查：一份telemetry fixture仍用失效的maxConcurrent0，改用受支持的1并独立10/10通过；mode相关3文件在标准umask022下92/92通过。之后实际全仓 **230文件5013 PASS、17 SKIP、0 FAIL**（51.65秒），不是前次失败被忽略。此全仓结果早于参数化派遣，不冒充新行为全量验收。
+- 用户要求CLI Worker由Agent指定选型、不要直接向用户提问。新增 `parameterize-worker-dispatch` 规划后修改Host：model/effort/role参数化，省略仅复用有效完整设定，缺参/失效明确拒绝；新增只读角色目录，Qoder歧义返回候选，删除userQuestions依赖。保留实时目录/账号绑定、角色快照、权限、并发/取消及启动前预期模型门禁。同步中英文README、详细用法及设计；不改版本、账号或历史，不提交/推送/发布。
+- 第一轮关联测试失败已逐项检查：新合成目录缺notice；旧测试仍等待问题卡、mock未消耗导致后续串扰。改为参数化/延迟授权检查及必备notice，不降低产品校验。后续10文件 **391/391 PASS**，Host/Client typecheck和该change严格校验通过；独立审查另外发现精确variant与effort冲突、AGY父路由在后续models/configure中丢失、显式换路由时目录绑定未固定，均补最小修复及专门反例，最终结果/部署继续在后追加，不以前述391代替新增反例。
+- 最终新增5项反例后，参数化派遣+账号/角色/逐轮结果/Host延期+Cursor/shared ACP定向 **12文件491/491 PASS、0 SKIP**；Host/Client typecheck、change严格校验均0。首次diffcheck指出工具description末尾一个空格，已修并复验0。没有将早前5013全量误称为本次新代码的全量验收。
+- [独立构建脚本](../.cache/build-parameterized-dispatch-20261025-r1.mjs)在新候选目录构建并再次typecheck；292份source构建前后/root-preview逐byte一致。安装归档SHA256 `6ed28ba813a21f78099b27ccc19b2688c468b7949671dd680e1e0c1415d51140`，18,259,966 bytes，**910个安全普通文件**逐一核对等于预览。Host `62c7777dc82237526947dbe742069446674521c8d6f33cfc0ad0efcf74809e60`；Client `b38ae9fea6a35a24b4cbc645241f5528b2e67959499ca210796afdcb5501bd3c`。未验收Cursor分类helper不在出货包内；保留原生未知client request拒绝。
+- 正式并发只读确认global/parent active/queued0后，[安装脚本](../.cache/install-parameterized-dispatch-20261025-r1.mjs)先备份实际已安装包和profile，再用官方 `dsh plugin --profile web add <archive> --ignore-scripts` 安装；核对701份lib产物、**786份既有Worker/events/raw/account-binding/fork文件字节均不变**，并发12、无关依赖、DSH PID38589/startTicks761921不变。私有[安装回执](../.cache/install-backups/parameterized-dispatch-20261025-r1/installation-proof.json)记录installed=true；只改profile来源注释触发正常热重载，没有重启/另开服务器、手改账号/凭据或发布。
+- 热激活后真实API拒绝边界返回本次新增“预期模型与本次精确选型不匹配；未创建 Worker”，不会产生问题卡。新 `cliworker_roles()` 实际返回7项id/name/summary及none，无prompt；minimax目录正常。随后显式 `model=m:minimax:MiniMax-M3.1-Flash:v:thinking`、effort=high、role=none 直接创建 `mmx-3`，Worker `09f94806-99bc-4826-bb34-584a8f63be5a`，run `58b988ab-4ad0-4334-b211-d01b8991f8ab`，未向用户提问。对应job已收齐，精确run result正文 `PARAMETERIZED_DISPATCH_NATIVE_OK`，configured/observed/native一致、targetModelVerified=true、partial=false、cleanup=confirmed、hasMore=false。此事实验证参数化无卡片路径，不代表全部CLI、跨真实AGY账号或GUI回归通过；Cursor P0、Kimi认证和OpenCode v2版本/能力待办保留。
+
+## 2026-10-25 agy-lxy共享设置兼容修复（本地热修复，未发布）
+
+- 用户报告原生agy-lxy可用而插件拒绝。只读定位为lxy的settings共享软链接被通用no-follow读取器拒绝，账号包装错误掩盖具体原因。新增精确受限AGY设置入口，不修改通用读取器或凭据链接策略。
+- [变更设计及验收](../openspec/changes/fix-agy-lxy-shared-settings/verification.md)：5文件88测试、Host/Client类型检查及OpenSpec严格验证通过。隔离构建从实际安装的62c7777基线只编译两个AGY模块，不混入其他会话在途源码。
+- 等全局活动/排队为0后备份安装6个产物；792份历史文件、并发设置和安装期间凭据字节保持不变。只改profile包来源注释热加载，不重启、不改功能配置。Host SHA256为7caedb7fcc40f9bf156c3d2750b284f361a17f60aee88f74e91811bdaf10748b。
+- 激活后先遇到旧会话账号绑定保护；通过正式工具显式为后续新Worker选择lxy/Argon high，随后原生模型目录成功。新agy-155/run21bc6c9f-e342-40a9-9635-5a871f0b3b8f真实请求收到RESOURCE_EXHAUSTED HTTP429（Individual quota reached，提示27h37m48s后重置），status failed、无正文、partial true、cleanup confirmed。此结果证明账号/目录/原生请求通路恢复，不代表成功完成审阅；不自动重试或换号。
+
+## 2026-10-25 父会话补齐运行中停止、恢复和原生排障证据
+
+- 回读已确认的原DSH审题会话后，确认新AGY改动归属 `session-eb8d0a32-d0bc-41f5-aad8-b6f5ed787dd2`，没有覆盖该写者在途改动。其共享设置修复已完成、安装并回到题目处理，私有安装以本父已验收62c7777为基线，只补AGY模块；当前7caedb7热包不能再宣称与前一个归档Host字节相同。前述参数化真实验收保持其当时证据，未冒充这次AGY额度失败为成功。
+- MiniMax `mmx-3` 原生运行中停止：既有Worker `09f94806-99bc-4826-bb34-584a8f63be5a` 的run `8b915a91-116f-4b1a-a6cc-c909709de9cf`。先以一次有界fs.watch等待本轮native observedModel及公开正文出现，exit0后才调用正式stop，不是queued取消、睡眠或忙轮询。停止回执为interrupted/user；精确run结果configured/observed均M3.1-Flash/thinking、effort high，native匹配，partial=true、cleanup=confirmed。29,917字符公开部分正文按4页读至hasMore=false；不把未完成的编号输出叫成功。
+- 同一个MiniMax Worker主动开启恢复轮 `66b0359b-7d8f-4906-a418-a6b411c12313`，通过expected_run_id指向被中断轮。原生conversation仍 `mvs_2a47561231434c7badec1908d9bdce14`，完整返回 `MMX_AFTER_ACTIVE_STOP_OK`，native模型匹配、partial=false、cleanup=confirmed。停止及恢复job均已收齐。
+- Cursor `cursor-5` 原生运行中停止：既有Worker `8d778152-3158-41d8-a261-540706a20a30` 的run `0686dc14-2e09-4644-a439-94c7c644e4b2`。首次90秒一次性fs.watch等正文超时（exit2），未把它说成ready或立刻重发；随后只读一次该run事件投影，确认running/native型号且已有43,382字符公开正文，才正式stop。结果interrupted/user、native模型匹配、partial=true、cleanup=confirmed；58,272字符按8页读至hasMore=false。没有引用内部推理，也没有把watch超时误判为CLI失败。
+- 同一Cursor Worker恢复轮 `1581d619-b802-4947-a907-5b63ef624fc4` 完整返回 `CURSOR_AFTER_ACTIVE_STOP_OK`；原生conversation仍 `ffa41bea-6439-459a-9210-83d6d0624834`，grok-4.7/context256k/high/fast的configured/observed一致，partial=false、cleanup=confirmed。旧中断轮分页在恢复轮追加期间保持相同水位24036、digest和58,272字符，不混入新轮回复。两个CLI job及两个watcher job均已收齐，无残留后台等待。
+- 两个原审查Agent仅只读续接，没有写文件/跑模型/递归派遣。OpenCode错误定位到完整stdout的严格版本解析，尚不知道本次实际resolved入口及stdout格式，不能说成账号、配额或缺服务；PATH未发现opencode不代表插件保存路径失效，静态2.0.31文件也不代表当前插件实际入口。下一步走正式路径API核对。
+- Kimi安装ELF静态只读核实：2.2 ACP的new/load在会话模型setter前调用无modelOverride的ensureAuthed；ensureReady使用原生default model及其provider。独立静态审查原先“保留--model可修”仅是线索，进一步核实ACP子命令不消费父级model，所以不能照此改argv。程序没有公开disable-auth开关，不能借内部disableAuth或自动authenticate绕过；KIMI_MODEL_NAME原生overlay会创建__kimi_env_model__，也不能冒充原精确alias。当前真实失败与该门禁相符，但尚未核对本机default来源，根因仍不冒称完全确认；未清配置/重登、借key、复制账号或原生patch。公开旧版[同类issue](https://github.com/MoonshotAI/kimi-code/issues/1330)只是辅助背景（报告版本0.22，不是本机2.2），不是本次实机根因证明。
+
+## 2026-10-25 GUI、无卡片文案补全与OpenCode原生版本横幅
+
+- 在原AGY源码任务已完成并转入在线验收后，父独立合并核对相关15文件 **510/510 PASS**，没有把旧全仓5013当新源码全量。检测到后来显式AGY账号查询修复由原会话完成并热装，保留其不重绑定、不串设置和cache-free行为；构建/安装均按实际最新基线而非旧归档。
+- [只读浏览器脚本](../.cache/gui-native-stop-verification-20261025.mjs)使用新incognito测试profile和原生token交换（不打印token/cookie、不接管用户浏览器），在现有61060硬刷新；实际DOM/截图确认boot有效、无页面横向溢出。通过观察到的agents workspace row与本父session row导航，不猜路由；打开真实CLI Worker，能看到mmx-3/cursor-5及完成状态。正式OpenCode高级设置只读返回 `/home/timidly/.opencode/bin/opencode`；没有点路径保存/自动识别重置、登录/退出/账号终端。设置页截图与NativeAPI回执正常，不等于完整子对话/窄栏/Windows已验收。
+- 发现两种configuring视图仍写“请在主对话的问题卡片中选择”，虽没有真的打开问题卡仍会误导。先将两条面板测试改为参数校验并实际得到2 FAIL，再替换两处为“正在校验派遣参数与原生账号，请稍候”；关联7文件 **439/439 PASS**、Host/Client类型及diffcheck通过。实际安装Client21efc455后浏览器硬刷新，正式设置API和安全错误在GUI可见。
+- 第一个诊断候选冻结后，安装前guard确实检出外部部署从680变为0a而拒绝，未覆盖。只读逐文件及完整Host diff后确认当前index实现相同、AGY两个helper只差sourceMappingURL、Host业务差异仅本次安全诊断；其余生成差异为SourceLocation/新面板文案/source maps。保留新AGY变更、显式记录受审rebase后才idle备份安装；首个归档96759cc1也保留。913归档文件/704lib逐byte验证，802份旧历史字节不变、并发/无关依赖/PID不变，没有中断其他Worker。
+- 热激活正式OpenCode目录查询得到仅形状诊断：unrecognized、17字符、一行、无ANSI；没有猜成账号或服务问题、没有公开任意stdout。只读续接原审查Agent，对固定ELF找到effect/cli --version→formatter→Console.log完整链，证实普通pipe为 `opencode v2.0.31\n`。旧解析器漏了品牌后的literal v，不是原生2.x未支持的证据。
+- [版本横幅完整验收](../openspec/changes/support-opencode-v2-native-metadata/version-banner-verification.md)：先红18 PASS/3 FAIL（两种branded-v被拒、旧跨行prefix误收），再最窄正则修复；最终7文件 **450/450 PASS**、Host/Client类型、strict OpenSpec与diffcheck通过。仅增加官方lowercase品牌v行并收紧跨行，不开放大小写/其他品牌/噪声/ANSI/未知major或无关SemVer范围。
+- 第二个全新候选293源码冻结/preview一致；包SHA256 `3a6df7ec3b21aaaefc6707b6d480fd89966bdcd09527a6b95b362a7bfc3c4240`（18,264,121 bytes），913安全普通文件、704lib核验。正式全局active/queued0且脚本再次验证native进程/精确最新基线后备份官方热装，802份历史不变；Host20f82bf1、Client21efc455，DSH38589/startTicks761921、并发12、其他依赖不变，无重启/另开服务/人工凭据修改。可复用[构建](../.cache/build-verified-candidate.mjs)/[安装](../.cache/install-verified-candidate.mjs)脚本保留明确hash、guard和不可覆盖旧证据规则，不自动retry/rebase。
+- 激活后正式 `cliworker_models(opencode)` 已不再报版本无法确认，进入真实下一门禁：**v2原生服务未运行或未登记，不表示账号登出**。还没有目录、远端模型/工具/停止闭环，不将版本修复冒称完整OpenCode验收；本轮没有自动启动服务或读取DB。完整服务与能力待办继续。Cursor被撤分类器的固定版本工具/诊断来源与反例矩阵另存[源合同](../openspec/changes/fix-cursor-outcomes/source-contract.md)，仍未接入出货路径。
+
+## 2026-10-25 原生子对话及389px窄栏实测
+
+- 同一现有61060、全新incognito测试profile，硬刷新后从实际agents workspace/current parent导航CLI Worker；等待真实Worker快照到达，避免把刚mount时尚未加载的空列表误判回归。只打开既有mmx-3和cursor-5，不新建对话、不提交输入、不接管现有浏览器。
+- [MiniMax截图](../.cache/gui-native-stop-verification-20261025/conversation/mmx-3-native.png)逐字显示 `MMX_AFTER_ACTIVE_STOP_OK`，保留上轮中断的原编号部分、恢复请求及恢复回复；[Cursor截图](../.cache/gui-native-stop-verification-20261025/conversation/cursor-5-native.png)显示 `CURSOR_AFTER_ACTIVE_STOP_OK`、对应中断部分与恢复轮，原生反馈/时间/输入框仍正常。两页原宽647px、无整页横向溢出；没有在测试中发送任何新prompt。
+- DOM首次使用的旧`.cwn-native-conversation`类名不是现版本的有效检测依据，JSON里的该匹配false不能说成没有原生对话；实际正文/原生控件及截图才是本次UI证据，不伪造该字段为true。
+- [窄栏截图](../.cache/gui-native-stop-verification-20261025/narrow/refreshed-home.png)：从实际hit-test观察到native 8px resize handle后才发送真实鼠标拖拽，未修改DOM/CSS强制宽度。Cursor栏由647到389px，`CURSOR_AFTER_ACTIVE_STOP_OK`仍完整，页脚显示grok-4.7/默认及原生输入控制；栏scrollWidth<=clientWidth、整页无横向溢出。[结构证明](../.cache/gui-native-stop-verification-20261025/narrow/narrow-proof.json)保留坐标、前后宽度及回复存在布尔。此为桌面浏览器内389px原生侧栏，不冒称390px整机移动布局、MiniMax同窄宽、Windows或未恢复CLI的全部UI已验收。
+- 两份浏览器进程均在finally关闭，无后台浏览器等待；原生CLI没有因此重新调用。继续保留Kimi实际认证、OpenCode服务/完整能力与Cursor负向分类未完成项。
+
+## 2026-10-25 Cursor P0 结果可靠性源码与合成验收（未部署）
+
+- 本子任务沿用唯一写权，仅改 Cursor helper/适配器、公共 ACP 可选钩子、两个构建清单及对应规格/测试/说明，保留其他全部 dirty。完整读取[固定源合同](../openspec/changes/fix-cursor-outcomes/source-contract.md)后重写撤下的旧4测试草稿；不把既有正向/停止/GUI实测冒称本P0新版本负向验收。包名/0.8.2/账号/原生能力均不变，无Git写、安装、真实CLI/模型、凭据/用户历史读取或SDK核心修改。
+- 先红：新60项helper反例对旧草稿得 **54 FAIL/6 PASS**（主要为新run API未实现）；原生产路径的20项真实合成ACP子进程→IO→Bridge回归得 **11行为FAIL/9 PASS**，实际复现四action/Error文本被当SUCCESS、关联负向未判、冲突/孤立身份错误。随后实现并追加边界。另一次明确红例：同一stdout buffer中prompt RPC result后通知仍被await续体前准入，污染正文并触发工具缺终态；不是错误归因为账号/额度。
+- 修复：Cursor-only post-dedupe acceptedUpdate与公开tool投影，每工具继承typed kind/已核输入，严格独占/按kind负证据；空error、多行reason/int32完整shell输出按源合同处理，普通error词、read.content与stdout JSON不解析。补读固定hash主index.js的WriteShellStdinArgs@4814152证实shellId为uint32 number（descriptor field13、默认0），不再猜string/safeInteger双类型；0/uint32上界与错误类型均有回归。每工具冲突只UNKNOWN，独立负向仍ERROR。未知/负向输出及整update只给固定安全摘要，正常成功object/diff保留。
+- 可撤销工具终态先UNKNOWN，完整prompt收尾才发布最终工具事件；不提前写common sticky fail或让真实tool consumer先消费COMPLETED/FAILED。同步fence仅认active本次本地JSON-RPC ID、合法互斥result/error且无method的回执；旧id/load/无关或错误shape不封口，同buffer后通知不入正文/工具。原生failed、权限拒绝、RPC、非零退出、缺终态、取消/cleanup仍硬失败；pending工具收尾UNKNOWN，不用fence替代OS清理证明。
+- 纵向证明包括实际Host→native-bridge→自有合成ACP子进程两用例：同Worker新run正文替换旧lastResult、UNCERTAIN/cleanup confirmed、queued followup paused且不自动next/retry；marker不进入公开历史。官方DSH AgentLoop/Session三用例实际消费投影：负→正矛盾不提前结算、结束后只TOOL_OUTCOME_UNKNOWN；独立负向为错误；0结果成功，不因临时UNKNOWN降级，所有用例冷读有效且不重执行真实工具。
+- 关联命令（均先 `umask 022`，pnpm加 `--config.verifyDepsBeforeRun=false`）：`exec vitest run tests/cursor-outcome.test.ts tests/cursor-outcome-bridge.test.ts tests/cursor-outcome-runtime.test.ts tests/cursor-native.test.ts tests/native-acp.test.ts tests/native-transport.test.ts tests/native-runtime.test.ts tests/native-stop.test.ts tests/agy-run-outcome.test.ts tests/worker-run-result.test.ts tests/harness-conversation-stream.test.ts` 得 **11文件309 PASS/1既有SKIP**；未跑全仓。`typecheck` Host/Client通过（DSH0.2.1-rc.2）；`spec validate fix-cursor-outcomes --strict --no-interactive`通过。此处只有源码/合成结果，父后续独立复核、构建、idle部署与真实负向尚未执行。
+- 已知局限保持可见：同文引用无origin不能判FAILED；未知action任意message无法穷尽；read无raw可能是非文本成功或失败、ls超时被上游折success、shell0不证明底层ShellSuccess，无法猜回。现有Host晚到cancel与summaryConflict排序未在本任务更改。P1 effort/rail和P2 MCP/附件/权限未开放；真实账号准备期错误另由父串行排查，本P0不掩盖或修订它。
+
+## 2026-10-25 Cursor content-only 终态快照复核修复（P1，不是 effort 扩展；未部署）
+
+- 父独立复核发现 P0 对 rawOutput 终态值有比较，却直接覆盖无 rawOutput 的 content：同 edit/delete ID 的 completed diff 从 ONE 变 TWO 仍会误报 SUCCESS。续回原写者唯一写权后只修这条 content-only 轨；common hooks、账号与独立准备期诊断规划未改。
+- 先红：`umask 022; pnpm --config.verifyDepsBeforeRun=false exec vitest run tests/cursor-outcome.test.ts tests/cursor-outcome-bridge.test.ts tests/harness-conversation-stream.test.ts` 得 **11 FAIL/127 PASS/1既有SKIP**。helper 7项、真实合成ACP/Bridge 3项与官方DSH消费者1项明确复现错误成功；等价重放/metadata/合法进度反例在红阶段已通过，不靠放宽所有结果修复。另新增不可变性反例先得 **1 FAIL**：输入/公开 output 引用复用能使最终可见内容偏离快照。
+- 最小修复仅在 helper 的 content-only 路径冻结首个有效终态结构值：首次 terminal 有 content 就取当次，省略时继承最新 progress；非终态内容可正常更新。后续 content 做深结构比较，对象键重排等价、数组顺序或真实 diff/text 值变化只令该 tool 歧义。缺 content、title/locations 更新不清证据。快照私有且公开 output 为独立副本，不让引用复用改变冻结值；不解析文本里的 error/JSON，不改变 rawOutput 判定或现有硬失败优先级。
+- 增量 **18项测试**（helper +12、bridge +4、官方消费者 +2）：覆盖 edit/delete/read/other、完整和省略 status、终态继承省略 content、进度变化、等价键重排/数组次序、输入/输出别名、独立真失败/native failed。整轮前仍无可撤销 COMPLETED/FAILED；矛盾最后 UNKNOWN/UNCERTAIN，官方工具回执 TOOL_OUTCOME_UNKNOWN、冷读有效，等价 diff 保留且正常 SUCCESS。材料规则同时最小对齐：仅新建的 runtime 测试生成根改至项目 `.cache/cursor-outcome-runtime/run-*`，不迁移/删除以前的全局临时材料。
+- 最终按上一节同一11文件关联命令得 **327 PASS/1既有SKIP**（328 total）；未跑全仓。Host/Client `typecheck`（DSH0.2.1-rc.2）、本 change 的 strict spec 与 diff 检查均通过，后台 jobs 已收齐。未构建/打包/安装、调用真实CLI或模型、读取真实账号/历史、改其他CLI/Core或进行Git写。旧309项记录保留为上一阶段证据，不冒充本次增量完成；实际部署、真实负向仍待父独立复核验收。
+
+## 2026-10-25 Cursor-only response fence 畸形协议失败关闭（未部署）
+
+- 父续原独立只读审查Agent的内存 probe 发现 owned prompt 回执带 `method:''/null/false/0` 时，LinePeer 按 falsy method 消费为 response，Cursor 的旧 fence 却忽略它，最终可把 BEFORELATE 当 SUCCESS。这是畸形协议的防御性修复，不是官方正常帧或真实模型错误证据；全局 LinePeer 与其他 ACP 默认不改。
+- 先红命令：`umask 022; pnpm --config.verifyDepsBeforeRun=false exec vitest run tests/cursor-outcome-bridge.test.ts tests/harness-conversation-stream.test.ts` 得 **15 FAIL/63 PASS/1既有SKIP**。4种 falsy method 真正误SUCCESS；mixed result/error（含null/false）、缺二者及非法error均出现 late 正文污染；官方DSH消费者也复现误SUCCESS。替换旧测试将 owned 畸形帧错误当作可忽略的预期，不把旧错误契约继续当正确。
+- 最小业务增量只在 `fencePromptResult` opt-in：active、未结束、exact本地prompt ID且 `!method` 的 response 候选先同步 ended；若有自有 method 属性、result/error 不互斥或 error.code/message 不合法，则固定安全 fail。合法无 method 的 result/RPC error仍按原终态；unknown/旧id和合法foreign permission request不封口，preprompt inactive门保持。保留此前正文，后续正文/tool不再准入，不复制rawerror，不用 fence 掩盖RPC/退出/取消/cleanup硬失败。
+- 新增 **15项合成纵向测试**（Bridge +14、官方消费者 +1），覆盖 method四值、mixed-null/false/object、缺result/error、error null/false/array/错误code/message、before保留/late排除、私密marker不公开、合法RPCerror与cleanup优先；同ID但非response的foreign request仍可继续接收正文，正常对照SUCCESS。现 change 设计/规格明确这是协议失败关闭，不将其描述为原生正常错误诊断分类。
+- 最终同前11文件关联命令 **342 PASS/1既有SKIP**（343 total），未跑全仓；Host/Client类型（DSH0.2.1-rc.2）、strict spec与diff检查均通过，后台job已收齐。只改可选fence及测试/fixture/现change与本记录，不碰账号、独立诊断规划、SDK/Core或其他CLI业务。无真实CLI/模型、账号/历史读取、构建/打包/安装/Git写；真实验收与部署仍待父独立复核。
+
+## 2026-10-25 父会话独立复验及准备期证据（未部署Cursor候选）
+
+- 原实现Agent三次阶段写权均明确释放、测试job由其收齐，独立审查Agent两次只读probe也已结束。父接回唯一写权后实际回读helper、可选fence、Cursor包装、IO结束清理及纵向测试，不只转述子汇报。独立以同前11文件命令重跑，[JSON报告](../.cache/cursor-p0-parent-20261025-r1.json)实际 **11文件342 PASS/0 FAIL/1既有SKIP**（343 total）；Host/Client类型对0.2.1-rc.2、Cursor strict、独立准备诊断strict、diffcheck均通过；父job `bash-1dbbbf375d7742fe` 已收齐。只有合成回归，不是全仓或真实negative验收。
+- 父仅两次尝试原cursor-5/worker `8d778152-3158-41d8-a261-540706a20a30` 的无文件副作用negative任务，使用精确model与旧run `1581d619-b802-4947-a907-5b63ef624fc4` 前置条件；均在准备期报CliAccountBindingError，**没有新run/job或业务prompt**。两次之间正式安全账号RPC返回authenticated/cli/oauth；随后正式cli与该Worker目录查询都成功，同原binding及配置。第二次后不再盲发，不新建Worker，不改配置/账号或建议重登；尚不知道进程/超时/读取哪个阶段失败，也不猜额度原因。
+- 为继续定位单独建立[准备期诊断规划](../openspec/changes/diagnose-cursor-preparation-metadata/proposal.md)，四份产物齐全且strict通过，**六项实施/实际核对任务均未完成**。仅固定阶段、受限退出及封闭原因的私密安全诊断，不扩大认证/准入或复制原始异常、stdout/stderr；此阶段未开始它的代码实施。
+- [Kimi 2.2研究](../openspec/changes/fix-kimi-native-credential-resolution/native-v22-readiness-research.md)保留正式默认模型元数据入口与四项同源API readiness env窄候选。父独立核官方固定tag的SDK private清单、provider命令、env overlay/section与thinking源码；未装SDK、跑新Kimi、读真实配置或改default。合成alias不能冒充原alias，必须setter真实echo/模式/effort核验后才能prompt；本机default差异与候选均未实测。
+- [OpenCode私有ACP研究](../openspec/changes/support-opencode-v2-native-metadata/private-acp-research.md)保留原只读审查的官方私有stdio服务/ACP入口、shared ensure潜在replace与清理边界。没有因“缺共享服务”而擅自启动/停止daemon；现v2纯文本deny-all限制、完整工具与实机/platform验收保持待办。
+- 父再次核在线包仍为Host `20f82bf1c35a82b64d3ef2283d5471ec8dfe2de81ff093cfb966b6f7001972de` / Client `21efc4552afc1cc250a9aa054cb46eb1aa658d03d39dc64807c33a6c830899ce`，**尚无Cursor outcome helper**；DSH PID38589/startTicks761921未变。没有新构建/打包/安装、重启或对外发布，不能将源码342项当线上已修。branch/HEAD仍fix/native-accounts-and-cli-adapters/16652c3，暂存为空，无本阶段Git写。
+- 后续按既有目标授权继续独立apply准备期诊断，取得实际阶段再做窄修；空闲备份/隔离新候选后才验真实Node exit7。必须严格关联本轮原生callID和独立原生tool证据，不以模型回复标记或分类器自己的固定FAILED摘要循环自证，不在本地直接执行命令假装Native通过；保留Kimi/OpenCode等未完成工作。
+
+## 2026-10-25 Cursor 准备期元数据安全诊断实施（Round6；未构建/未部署）
+
+- 原写者沿独立[诊断 change](../openspec/changes/diagnose-cursor-preparation-metadata/proposal.md)执行 apply，仅完成 1.1–1.3。父批准增加 resolve 阶段后先同步 proposal/design/spec/tasks 并 strict，再动代码；2.* 的隔离构建、包一致、备份热装及同原 Worker 实际核对仍未执行、未勾选。已读入口 `~/.agents/AGENTS.local.md` 的610规则，没有读其中提及的凭据/服务配置。
+- 实际边界：Cursor binding 先 resolve 再 status capture，故 resolve 只在 Cursor material 外壳投影为安全阶段，不改路径选择/授权；共享捕获内部 opt-in 安全异常，只有 Cursor status 开启，非 RPC/tool 参数。默认仍原成功值、read→done顺序、原异常身份/固定旧文案；没有扩大其他CLI业务。固定 phase resolve/spawn/read/exit/timeout、封闭系统原因/unknown、退出码uint32或null；不存原始message/cause/stdout/stderr/env/argv/name/arbitrary code，不解析stderr猜登录。
+- 先红：metadata/cleanup/UTF8三文件 **12 FAIL/10 PASS**；Cursor准备8项 **4 FAIL/4 PASS**（同步/异步resolve及status错误被吞为generic登录/绑定错误）。typed cleanup与caller abort竞争另有 **1 FAIL**，畸形/throwing done字段另有 **1 FAIL**，分别修复为cleanup优先、exit阶段失败关闭。取消reason保留控制身份不拼诊断；terminate/wait false/throw失败保留ProcessCleanupUnconfirmedError，并继续按CLI持久隔离。
+- 纵向5个实际runtime准备守卫+真实binding/status捕获合成用例覆盖resolve/spawn/exit/cleanup/cancel：所有spawn只允许status，无prompt/模型调用；旧Worker/run/native conversation/模型权限偏好/账号绑定/历史完全不变。cleanup仅封Cursor、不封其他CLI，关闭旧测试store后冷开仍保护；初次冷开用例触发单写锁后修正测试先close再reopen，没有修改锁业务或绕过。所有新持久测试材料仅在repo `.cache/cursor-preparation-runtime/run-*`，不迁移/删除旧全局tmp。
+- [完整合成记录](../openspec/changes/diagnose-cursor-preparation-metadata/verification.md)：`umask 022` 后，pnpm均带 `--config.verifyDepsBeforeRun=false`；metadata-diagnostics/metadata-cleanup/catalog-decoding/cursor-preparation-diagnostics/cursor-preparation-runtime/cursor-native/cli-account-binding/cli-settings/native-runtime/dispatch-flow/cursor-outcome-runtime 共 **11文件364 PASS/0 FAIL**。Host/Client typecheck against DSH0.2.1-rc.2、本change strict及diffcheck通过；后台jobs已收齐，未跑全仓。只有本阶段源码/合成，不把旧准备失败判为已恢复或已登出，也不把目录成功当续聊成功。
+- 已审Cursor outcome helper/fence、其他CLI业务、SDK/Core、版本/包名均未改；无新RPC/提问卡、NativeCLI/模型、账号/历史读取、自动重试/登录/换模型、构建/打包/安装或Git写。真实两次失败原因依然未知，后续父独立构建/部署后只做已授权的一次精确原Worker核对，保留全部未完成事项。
+
+## 2026-10-25 父复验、Cursor诊断热装与原生权限核对（Round6）
+
+- 独立只读审查发现accepted exit=0+signal可误成功、default非Cursor的spawn/read错误与caller取消竞争改变原异常身份。父新增11项实际红 **11 FAIL/21 PASS**，最小安全分支/legacy catch修后单文件32PASS；随后[冻结输入的联合报告](../.cache/cursor-diagnostics-parent-20261025-r1.json) **19文件634 PASS/0 FAIL/1既有SKIP**（635 total）。765个产品/测试输入前后不变，Host/Client类型、两个change strict、diffcheck通过，未跑全仓。
+- 全新[隔离候选证明](../.cache/cursor-outcomes-diagnostics-20261025-r1-package/build-proof.json)：295 src/511产品输入匹配，919个包文件逐字节等preview；18276053bytes，SHA `9bf92f83964ec01b4cb5fee218e3f45622bf53c26aa8ae20151f7bc823f6175c`。构建器只在显式reviewed Cursor模式并有精确关联测试/源输入证明时允许三份已审helper产物；不再用旧“实验排除”证明冒称本新包，也不泛放名字匹配文件。
+- 正式全局budget12/active0/queued0、3秒quiet及native helper guard后，先备份真实在线包和profile，再官方热装。[安装证明](../.cache/install-backups/cursor-outcomes-diagnostics-20261025-r1/installation-proof.json)：710产物相同、816份当时历史byte未变、无关依赖和并发不变，DSH PID38589/startTicks761921不变。Host现a4ef5c9542f85f0fa5e18c16aa9b20b824e0d6d2ac798d1f30ed757c020b1ea4，Client仍21efc455；activation只改第2行旧说明注释，其余行全等，未重启/中断其他任务。
+- 只对cursor-5/worker8d778152原run1581d619/精确grok opaque ID正式followup一次，实际新run **94472825-4d7c-4eeb-adc5-32ee6e0d8c59**、job cliworker-29f65cd339754ceb；新配置有native匹配回执，仍同native session ffa41bea。此次准备准入通过，之前两次generic故障**没有复现但根因仍未知**。不是通过重登、换号、换Worker或盲重发恢复。
+- 原生工具请求额外权限后拒绝，最终failed/partial/cleanup confirmed；公开body虽有CURSOR_NEGATIVE_EXECUTED，不拿它证明执行。[本轮安全观察](../.cache/cursor-native-negative-20261025-r1-observation.json)筛42条ownrun事件，命令与发出的script完全相等，独立exit证明文件不存在。该tool先UNKNOWN后又COMPLETED，但runERROR；继续只读核权限合同及精确tool因果，**不宣称shell exit7分类已实测通过**，不加force或降低保护。job与run正文已收齐。
+- [诊断记录](../openspec/changes/diagnose-cursor-preparation-metadata/verification.md)把原写者364项阶段、父11红→32绿、634项/包/安装/实际权限拒绝分别保留。诊断change完成的是安全可观察性及一次正式核对，不代表所有Cursor/Kimi/OpenCode/平台或新auth profiles已交付，不归档隐藏缺口。
+
+## 2026-10-25 用户新增收尾与鉴权范围确认
+
+- 用户明确要求基本功能闭环、文档清楚并独立审核、所有成果留在同一分支，最后归属核对后提交推送远端并总结本轮功能。本次已授权Git暂存/commit/push本轮范围；不吞其他无关dirty，不变包名/0.8.2，不创建PR/tag/Release/注册仓库发布。尚未执行本次Git写或推送，不能说已推。
+- 经问题卡明确选择“多份原生鉴权先打通，Hub/额度后续”：本轮支持agy-lxy/mcode-agony/codex-ljy这类来源的独立私有导入/保存与Agent显式auth_profile选择；没有Hub也能多份存储。Hub导入/额度不在本轮实施，不提供假的0余额或自动跨账号重试。已有Nativeconversation固定源/版本，忙碌不换号；只白名单鉴权/必要配置，不复制历史，不改来源；OAuth副本不是独立服务端grant或额外额度的边界需文档可见。
+- 只读原研究Agent已给三个CLI的最小注入点/安全白名单：AGY有scoped HOME，MiniMax新root需按原生schema重键record索引且不能复制锁，Codex需把同一scoped CODEX_HOME贯通source/catalog/执行而非只给子进程塞env。实际三个wrapper绝对路径尚未在本环境独立确认，PATH未找到不等于未安装，不能据名字猜目录或执行任意wrapper。此时尚未写auth profiles产品代码/规格或真实导入，不拿设计当支持完成。
+
+## 2026-10-25 Cursor本地deny及read缺证据窄修（独立写者；未构建/未部署）
+
+- 父交接正式run94472825的已知本地权限拒绝、工具却后置COMPLETED，以及run871202a9的read无输出却completed两项证据；本写者没有读真实历史/配置/凭据、重查真实路径或发新Native任务。既有固定源静态核验：6136@56283权限沿用session/toolCallId且reject/cancel为approved:false，@96393 rejected shell rawOutput为undefined；不能把可见0当本次真实案例事实。@95115只有edit/delete content分支、没有read/image；@96571 read文本成功才有raw content，非文本success/error都可能无输出。
+- 沿原fix-cursor-outcomes追加5.*后strict再红→绿；父后续明确批准6.*，先报告helper的`ended && final`默认COMPLETED缺少read正证据检查，再补源合同/spec/tasks并strict后实施。5.*先红三文件 **12 FAIL/168 PASS/1既有SKIP**：空/可见0 local deny卡错误COMPLETED，内容冲突误UNKNOWN；helper、真实合成ACP子进程/Bridge、官方passive consumer均复现。6.*先红四文件 **12 FAIL/199 PASS/1既有SKIP**：缺raw、empty、无来源text/image content的read都实际误SUCCESS，而正常文本/空串/计数对照已通过。
+- 5.*业务只在common实际选reject/cancel且active&&!ended/exact session的回执处、先保留原权限runERROR后同步可选permissionDenied两个ID观察点；只Cursor配置。tracker按本run有效唯一opening存localDenied，并与orphan/重复opening/kind或输入子型漂移的identityAmbiguous分开；普通output矛盾不能冲掉已知deny，之后ID复用则最终UNKNOWN而非把旧deny贴新卡。因为未来复用仍可撤销关联，非native failed的FAILED只在整轮finalEvents发布，原生failed硬失败仍胜出；不改native raw status，不传reason/title/raw，不开放任何批准能力。
+- 6.*业务仅read最终缺已核visible/negative证据时UNKNOWN、原SUCCESS降UNCERTAIN，初始RUNNING及原终态延迟保持；raw文本含空串/readLints有效计数及metadata省略保留。严格negative、localDenied、native failed/独立工具失败、取消/传输/cleanup仍优先；不解析error词/JSON/文件名，也不Host读文件猜ERROR，不把原生丢失的image/no-output成功默认为成功，不泛改其他kind。旧“nontext read无raw也成功”的错误测试预期已退出。
+- 新合成覆盖 **59项**：helper+21、Bridge+24、官方消费者+8、common内存peer及既有loopback目录基线+4、Runtime+2。多tool只失败目标；orphan/foreign/preprompt/ended/reuse隔离；批准路径仍只按既有MCP allow_once、无hook其他ACP原语义不变，没有实际MCP/CLI工具执行。真实post-result reply有一次与EOF/cleanup竞争，未改业务吞掉硬传输错；该真实通道用例保留实际清理边界，另以内存owned-response fence确定验证late不触发deny hook。隐私对照不拿deny之前正常内容伪称私密错误，也不回滚抹去合法已展示正文。
+- Runtime→真实bridge→owned synthetic ACP新增read-unproven/local-denied两轨：新run正文不拿旧lastResult，分别uncertain/failed且cleanup confirmed；后续消息paused、总共仅两次spawn（旧成功+本轮），没有第三次或自动重试。官方passive consumer在deny→completed→gate→reuse前没有先消费成功/失败，最终UNKNOWN回执/FAILED与冷Session一致，真实注册工具未执行。所有新增持久材料仅repo `.cache/cursor-outcome-runtime/run-*`，其余测试内存或受管合成子进程，无全局tmp新夹具。
+- 最终命令：`umask 022; pnpm --config.verifyDepsBeforeRun=false exec vitest run tests/cursor-outcome.test.ts tests/cursor-outcome-bridge.test.ts tests/cursor-outcome-runtime.test.ts tests/harness-conversation-stream.test.ts tests/native-acp-permission-denied.test.ts tests/cursor-native.test.ts` 得 **6文件283 PASS/0 FAIL/1既有SKIP（284 total）**；Host/Client类型 against DSH0.2.1-rc.2、本change strict与diff检查通过，后台jobs已收齐，未跑全仓。首次Runtime新增断言仅因Host会加`Error: CLI ERROR:`前缀而失败，修正测试核固定权限原因，未改变错误包装产品逻辑。
+- 本写者不执行Git写（尽管主任务已另获最终commit/push授权）、构建/打包/安装、真实CLI/模型、账号/历史读取、force/配置修改、临时Native MCP/新RPC或新Agent。metadata P1、其他CLI业务、SDK/Core、版本/包名及所有无关dirty保持；本次5/6代码合成不证明线上或实际shell7/read负向已恢复，正式候选与实机由父独立复核。
+
+## 2026-10-25 Round7独立复验与鉴权apply准备
+
+- 父独立审查5/6及readonly审查者纯helper探针确认localDenied/readUnproven主路径；另发现仅helper的未终态卡UNKNOWN而finalize(SUCCESS)未降级。**common本来已有“CLI工具缺少终态”硬ERROR，不能冒称当前生产假SUCCESS**。父先补4反例实际4FAIL/97PASS，再只给helper final unknown加入非terminal，不动common及已有硬失败。
+- [父冻结联合报告](../.cache/cursor-local-evidence-parent-20261025-r1.json)实际 **20文件697 PASS/0 FAIL/1既有SKIP（698total）**，766个产品/测试输入前后相等；Host/Client类型、Cursor/准备诊断/auth计划三份strict及diffcheck通过。未跑全仓。只读审查不冒充执行，4个新反例是父实际跑过的内部一致性修正。
+- [新隔离构建证明](../.cache/cursor-local-evidence-20261025-r1-package/build-proof.json)：919包文件与preview一致、295src/511产品输入冻结，18277450bytes，SHA `52ad583b075f495ea3e6e2dc7bb71a687e1e2adf113696deec78bc52d2d1b476`；候选Host2cadf670/Client21efc455，reviewed helper e9d5800d。此包**尚未安装**：正式全局active1/queued0且本parent0，安装verify-only在idle守卫正确退出1，无备份或线上修改；180秒事件watch未找到quiet窗口，结束0并如实报告other-work-still-active，不停止/泄露其他任务。
+- [auth计划](../openspec/changes/add-native-auth-profiles/proposal.md)经原只读研究Agent审查整体符合scope；补清materialRevision与管理recordRevision/CAS，rename不使旧材料过期、同身份reimport后旧Worker仍合法旧root；API无稳定native principal时换key不据provider/标签/路径认作同账号。strict通过，实施前仍0/17，不以OpenSpec planning complete冒称功能完成。
+- 开始按既有授权apply私有store及安全快照1.1/1.2；Hub/额度、CLI wrapper执行、真实凭据或历史读取不在该源码子任务。Cursor新包保留为未安装候选，后续产品源码继续变化后必须重新冻结/关联核验再构建，不能复用旧源码证明强行过门禁。正式实机和最终commit/push仍待整体验收。
+
+## 2026-10-25 Round7新冻结热装与Cursor正式否定/恢复验收
+
+- auth基础写者release后父重读API/安全边界并独立联合复验：[23文件报告](../.cache/cursor-authstore-parent-20261025-r1.json) **755PASS/0FAIL/1既有SKIP（756total）**、774输入冻结，Host/Client类型、三份strict/diff通过；不是全仓。auth保持**仅1.1完成、16项待办**，strict snapshot直接AUTH_UNSUPPORTED，native import/tools/UI未接，不能拿58合成当真实导入已通。
+- 空闲窗口正式核0active/0queued后重新build/备份/热装：[候选证明](../.cache/cursor-authstore-20261025-r1-package/build-proof.json) **928文件/18295001bytes/SHA87eb221e5057d7b5a47d825ae28999d3aa00edff0ff6e68dbf6649c4131206f9**；[安装证明](../.cache/install-backups/cursor-authstore-20261025-r1/installation-proof.json)核719lib、827历史不变、无关依赖/并发不变、PID38589/startTicks761921不变。部署前发现另一任务已把线上指向AGY catalog-preflight，先查实际package与hash而非沿用a4ef叙述；新候选Host2cad/Client21ef与其一致，保留AGY运行字节。额外只有adapters.js.map的mappings（adapters.js相同），明确核对为非执行映射后准入，先前检查失败未算通过。没有覆盖无关运行代码或重启。
+- 激活仅profile第2行说明，其他行与本次backup逐字相同。实际helper e9d5800d、native-cursor f867d38d、native-acp24120e83与源一致。四个正式run都用cursor-5原conversation/子会话，精确expected model及前run准入、native observed Grok高推理fast匹配、各cleanup confirmed、公开结果均读到hasMore=false、jobs收齐。
+- 正向run9d625268：1read实际raw内容包含**提示词里没有的随机nonce**，工具最终COMPLETED，正文complete。拒权run587fbd77：1准确Node命令，固定本地拒绝原因且工具最终FAILED，不再COMPLETED；**没有证实exit7实际运行**。缺read证据run014b5430：1准确path，工具最终UNKNOWN、runUNCERTAIN/partial，无自动重试；人工path前后不存在不放进分类器。明确新任务run53469596：零tool、原native/Harness会话不变，正文CURSOR_AFTER_UNCERTAIN_OK且completed/complete，不借旧lastResult。
+- [Cursor独立验收详情](../openspec/changes/fix-cursor-outcomes/native-acceptance-20261025.md)保留run/事件/边界；[实际GUI证明](../.cache/gui-cursor-outcomes-20261025-r1/proof.json)在既有61060页面刷新后打开原生侧栏：最新待核实提示、拒绝原因及正文可见、647px无横溢出、1个原生输入。SDK turn显示Failed但保留明确待核实原因，不误称成功；未冒称这次389px或Windows全量验收。隔离browser退出，无新服务器/用户浏览器干预/客户端样式更改。
+- 原只读研究已落回各自来源：[Kimi readiness研究](../openspec/changes/fix-kimi-native-credential-resolution/native-v22-readiness-research.md)新增公开KIMI_CODE_HOME/真实default alias的稳定worker root候选（未实施，不借privateSDK/合成thinking，不省略保护）；[OpenCode研究](../openspec/changes/support-opencode-v2-native-metadata/private-acp-research.md)补私有stdio/selection合同及ACP缺session deny上限，不能靠plan或旧OPENCODE_PERMISSION冒readonly，privateHTTP为可选后续独立设计。只读metadata找到3个Codex cc-switch原生根且settings都指默认config，未读auth内容，alias/实际身份仍待正式导入核验。
+- 仍有明确未完：auth16项/三个adapter与工具UI、Kimi与OpenCode实机闭环、builtin once审批/允许执行、文档最终独立审查和全仓最终验收、归属核对后的同branch commit/push。包名/0.8.2不变，本轮尚未stage/commit/push，不创建PR/tag/Release，不以该Cursor修复收尾冒整个目标完成。

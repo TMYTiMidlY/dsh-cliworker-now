@@ -56,6 +56,7 @@ const recordSchema = z
 /** Non-secret associations only; never reuse a CLI session ID as a Harness ID. */
 export class HarnessConversationStore {
   private records = new Map<string, HarnessConversationRecord>()
+  private unpublishedReplacements = new Map<string, { candidate: HarnessConversationRecord; previous: HarnessConversationRecord }>()
   private readonly path: string
   constructor(private readonly directory: string) {
     const root = lstatSync(directory)
@@ -135,12 +136,39 @@ export class HarnessConversationStore {
     next.delete(current.sessionId)
     next.set(row.sessionId, row)
     this.commit(next)
+    this.unpublishedReplacements.set(row.sessionId, { candidate: structuredClone(row), previous: structuredClone(current) })
+  }
+  /** Restore only an exact unpublished replacement; ordinary historical replace stays strict.
+   * Caller must first prove SDK capacity refusal, absent live child and confirmed drain. */
+  restoreUnpublished(candidate: HarnessConversationRecord, previous: HarnessConversationRecord): void {
+    const expected = recordSchema.parse(candidate), prior = recordSchema.parse(previous)
+    const current = this.records.get(expected.sessionId)
+    const snapshot = this.unpublishedReplacements.get(expected.sessionId)
+    // Reconstruct the only candidate the bridge may prepare from this prior.
+    // No turn/native input from an actual child may be discarded by this seam.
+    const allowed = recordSchema.parse({ workerId: prior.workerId, parentSessionId: prior.parentSessionId,
+      sessionId: expected.sessionId, initialRunId: expected.initialRunId, initialPending: true,
+      ...(prior.nativeInputs ? { nativeInputs: prior.nativeInputs } : {}),
+      retiredSessionIds: [...(prior.retiredSessionIds ?? []), prior.sessionId] })
+    if (!current || !snapshot || JSON.stringify(prior) !== JSON.stringify(snapshot.previous) ||
+      JSON.stringify(expected) !== JSON.stringify(snapshot.candidate) ||
+      expected.sessionId === prior.sessionId || this.records.has(prior.sessionId) ||
+      JSON.stringify(current) !== JSON.stringify(expected) || JSON.stringify(expected) !== JSON.stringify(allowed))
+      throw new Error('未发布原生会话回滚的精确身份或内容已改变')
+    const next = new Map(this.records)
+    next.delete(expected.sessionId)
+    next.set(prior.sessionId, prior)
+    this.commit(next)
   }
   private commit(next: Map<string, HarnessConversationRecord>): void {
     const temporary = join(this.directory, `.harness-conversations-${randomUUID()}.tmp`)
     try {
       writeFileSync(temporary, JSON.stringify([...next.values()]), { mode: 0o600, flag: 'wx' })
       renameSync(temporary, this.path)
+      // A touched candidate invalidates its unpublished lease even if the
+      // serialized value was written back identically (ABA/stale revision).
+      for (const [id, snapshot] of this.unpublishedReplacements)
+        if (next.get(id) !== this.records.get(id) || JSON.stringify(next.get(id)) !== JSON.stringify(snapshot.candidate)) this.unpublishedReplacements.delete(id)
       this.records = next
     } catch (error) {
       if (existsSync(temporary)) unlinkSync(temporary)

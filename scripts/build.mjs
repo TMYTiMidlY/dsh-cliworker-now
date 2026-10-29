@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { selectBuildDependencies, buildTypeConfig, clientBundleDependencies, selectedTypertResolver } from './build-dependencies.mjs'
 import { verifyHostRuntime } from './host-runtime.mjs'
+import { buildNativeAuthGuard } from './build-native-auth-guard.mjs'
 
 const root = resolve('.')
 const dependencies = selectBuildDependencies(root)
@@ -24,6 +25,9 @@ if (typecheckOnly) {
 rmSync(join(root, 'lib'), { recursive: true, force: true })
 rmSync(join(root, '.cache/typert'), { recursive: true, force: true })
 mkdirSync(join(root, 'lib'), { recursive: true })
+// Build-time only; typecheck-only returned above. Unsupported targets ship an
+// auditable unsupported manifest, never a runtime compiler/watch fallback.
+buildNativeAuthGuard({ root, outDir: join(root, 'lib/native-auth-snapshot') })
 mkdirSync('lib/native-runtime-guard', { recursive: true })
 cpSync('scripts/host-extension-guard.mjs', 'lib/native-runtime-guard/index.mjs')
 cpSync('scripts/host-runtime.mjs', 'lib/native-runtime-guard/host-runtime.mjs')
@@ -63,6 +67,7 @@ for (const name of [
   'native-qoder',
   'native-cursor',
   'cursor-state',
+  'cursor-outcome',
   'native-minimax',
   'minimax-state',
   'qoder-durable-context',
@@ -109,7 +114,7 @@ cpSync('src/host/pi-installation.d.mts', 'lib/types/host/pi-installation.d.mts')
 cpSync('src/host/native-launch.mjs', 'lib/types/host/native-launch.mjs')
 cpSync('src/host/native-launch.d.mts', 'lib/types/host/native-launch.d.mts')
 cpSync('src/host/native-spawn.mjs', 'lib/types/host/native-spawn.mjs')
-for (const name of ['opencode-v2-service', 'opencode-v2-ledger', 'native-opencode-v2', 'minimax-state', 'cursor-state', 'kimi-durable-usage', 'qoder-durable-context', 'omp-context-inspection', 'hermes-observer', 'native-hermes-home', 'native-http', 'native-attachments', 'native-agy-harness', 'native-harness-injection', 'native-harness-mcp', 'native-harness-extension', 'native-response', 'primary-response', 'codex-run-usage', 'http-rpc-response', 'grok-response', 'grok-durable-context', 'zcode-response', 'zcode-context-observation', 'windows-console-manifest']) {
+for (const name of ['opencode-v2-service', 'opencode-v2-ledger', 'native-opencode-v2', 'minimax-state', 'cursor-state', 'cursor-outcome', 'kimi-durable-usage', 'qoder-durable-context', 'omp-context-inspection', 'hermes-observer', 'native-hermes-home', 'native-http', 'native-attachments', 'native-agy-harness', 'native-harness-injection', 'native-harness-mcp', 'native-harness-extension', 'native-response', 'primary-response', 'codex-run-usage', 'http-rpc-response', 'grok-response', 'grok-durable-context', 'zcode-response', 'zcode-context-observation', 'windows-console-manifest']) {
   cpSync(`src/host/${name}.mjs`, `lib/types/host/${name}.mjs`)
   if (existsSync(`src/host/${name}.d.mts`)) cpSync(`src/host/${name}.d.mts`, `lib/types/host/${name}.d.mts`)
 }

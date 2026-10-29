@@ -31,7 +31,7 @@ export function minimaxState(state) {
     mode: state.modes.currentModeId, effort: effort?.currentValue,
     efforts: effort ? effort.options.map(x => x.value).filter(x => MINIMAX_EFFORTS.includes(x)) : [] }
 }
-/** Set always returns a fresh complete receipt; no inherited effort option survives a model change. */
+/** Strict exact-current receipts are idempotent; changed selections require fresh complete receipts. */
 export async function configureMiniMax(peer, sessionId, state, preference) {
   const select = async (id, value) => {
     const result = await peer.request('session/set_config_option', { sessionId, configId: id, value }, { jsonrpc: true })
@@ -40,12 +40,11 @@ export async function configureMiniMax(peer, sessionId, state, preference) {
   }
   let current = minimaxState(state)
   if (!current.models.some(x => x.id === preference.model)) throw invalid()
-  // Even identical model selection obtains this model's authoritative current effort receipt.
-  current = await select('model', preference.model)
+  if (current.model !== preference.model) current = await select('model', preference.model)
   if (current.model !== preference.model) throw invalid()
   if (preference.effort !== 'default') {
     if (!current.efforts.includes(preference.effort)) throw invalid()
-    current = await select('thinkingEffort', preference.effort)
+    if (current.effort !== preference.effort) current = await select('thinkingEffort', preference.effort)
     if (current.effort !== preference.effort || current.model !== preference.model) throw invalid()
   }
   current = await select('permissionMode', 'default')

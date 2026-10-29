@@ -1,3 +1,4 @@
+import { HostChildCapacityDeferred, isHostChildCapacityError } from './host-child-admission.ts'
 import { selectForkHistory, type ForkHistory, type ForkChild } from './worker-fork.ts'
 import { bridgedFeatureSupport, type BridgedConversationFeature, type BridgedFeatureSupport } from '../shared/conversation-features.ts'
 import { createHash, randomUUID } from 'node:crypto'
@@ -39,6 +40,8 @@ const PROJECT = 'cliworker:project-admitted-run:'
 const marker = (message: UserMessage) =>
   message.content[0]?.type === 'text' ? message.content[0].text : undefined
 const notice = (message: UserMessage) => message.source.kind === 'cliworker-continuation'
+/** Runtime context updates are observations, never independent user/Tool submissions. */
+const actionable = (message: UserMessage) => !notice(message) && !['working-directory', 'runtime-context'].includes(message.source.kind)
 /** Official retries mint new inbox IDs but retain the browser RPC identity. */
 export const harnessSubmissionId = (message: UserMessage): string => {
   const source = message.source
@@ -396,9 +399,11 @@ export class HarnessConversationBridge implements HarnessConversationApi {
           const record = this.records.get(payload.agent.id)
           if (!record) return this.ownerOf(payload.agent.id) ? { kind: 'reject' } : next()
           this.assertLive(record, payload.agent)
+          // Copy provenance BEFORE downstream middleware appends runtime/instruction inputs.
+          const claimed = payload.messages.filter(actionable)
           const decision = await next()
           if (decision.kind === 'reject') return decision
-          let messages = payload.messages.filter((message) => !notice(message))
+          let messages = claimed
           if (!messages.length) {
             if (!this.streams.has(record.sessionId)) return { kind: 'reject' }
             return { ...decision, messages: payload.messages.filter(notice) }
@@ -720,7 +725,7 @@ export class HarnessConversationBridge implements HarnessConversationApi {
       return
     }
     const message = position.agent.inbox.nextStep.find(
-      (item) => !notice(item) && !marker(item)?.startsWith(SENTINEL) && !this.projection(record, item),
+      (item) => actionable(item) && !marker(item)?.startsWith(SENTINEL) && !this.projection(record, item),
     )
     // Native steering is text-only. Keep the first attachment and all later
     // arrivals in the authoritative Inbox until the current run has settled.
@@ -1154,7 +1159,7 @@ export class HarnessConversationBridge implements HarnessConversationApi {
             !this.ctx.agents.get(existing.sessionId as Agent['id']) &&
             this.deps.replaceBinding
           ) {
-            const recovering = this.creating.get(worker.id) ?? this.create(parent, worker, options, existing)
+            const recovering = this.creating.get(worker.id) ?? this.create(parent, worker, options, this.records.get(existing.sessionId) ?? existing)
             this.creating.set(worker.id, recovering)
             try {
               return await recovering
@@ -1220,6 +1225,8 @@ export class HarnessConversationBridge implements HarnessConversationApi {
       } catch (cleanup) {
         throw new AggregateError([error, cleanup], 'CLI 显示挂接失败且回滚未确认')
       }
+      if (isHostChildCapacityError(error) && !signal.aborted && !this.ctx.agents.get(SessionId(record.sessionId)))
+        throw new HostChildCapacityDeferred(parent)
       throw error
     }
   }
@@ -1236,7 +1243,7 @@ export class HarnessConversationBridge implements HarnessConversationApi {
     const record: HarnessConversationRecord = {
       workerId: worker.id,
       parentSessionId: parent.id,
-      sessionId: randomUUID(),
+      sessionId: options.admissionChildId ?? randomUUID(),
       initialRunId: options.initialRunId ?? worker.runId,
       initialPending: !forkHistory,
       ...(forkHistory ? { turnRuns: this.recordsForFork(worker, forkHistory) } : {}),
@@ -1291,14 +1298,20 @@ export class HarnessConversationBridge implements HarnessConversationApi {
       }
       return this.binding(record)
     } catch (error) {
+      const capacity = isHostChildCapacityError(error) && !signal.aborted &&
+        !this.ctx.agents.get(SessionId(record.sessionId)) && !this.activations.has(record.sessionId)
       try {
         await this.drainChildren(parent, [SessionId(record.sessionId)])
         if (previous && this.records.has(record.sessionId)) {
-          const rollback = {
+          const rollback = capacity ? previous : {
             ...previous,
             retiredSessionIds: [...(previous.retiredSessionIds ?? []), record.sessionId],
           }
-          await this.deps.replaceBinding!(record, rollback)
+          if (capacity) {
+            if (!this.deps.restoreUnpublished) throw new Error('未发布子会话精确回滚入口不可用')
+            signal.throwIfAborted()
+            await this.deps.restoreUnpublished(record, rollback)
+          } else await this.deps.replaceBinding!(record, rollback)
           this.records.delete(record.sessionId)
           this.remember(rollback)
         } else if (!previous) {
@@ -1308,6 +1321,8 @@ export class HarnessConversationBridge implements HarnessConversationApi {
       } catch (cleanup) {
         throw new AggregateError([error, cleanup], 'CLI 原生子会话创建失败且清理未确认')
       }
+      if (capacity && !signal.aborted && !this.ctx.agents.get(SessionId(record.sessionId)))
+        throw new HostChildCapacityDeferred(parent, record.sessionId)
       throw error
     } finally {
       this.forkSeeds.delete(record.sessionId)

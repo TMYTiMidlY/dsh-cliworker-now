@@ -17,6 +17,7 @@
 ## Decisions
 
 - 新增 opencode-v2.ts，版本查询使用既有有界 ProcessBackend metadata capture；版本输出只接受明确 semver 1/2，未知格式/major 不回退。官方安装路径只作为默认 PATH 缺失的候选，不覆盖手动入口。
+- 2026-10-25 父会话已获真实验收/空闲热更新授权后，补固定安装版横幅：正式路径API确认 `/home/timidly/.opencode/bin/opencode`，ELF SHA256 `2df936a20cf74af5706020342164628f9a31978c50c2b0ad306b42b614fe245d`。静态effect/cli默认formatter@131425441为 `formatVersion(name,version) => bold(name)+' '+dim('v')+bold(version)`；pipe时bold/dim为identity（@131424249），内置version flag@131450675调用Console.log（@131371041），root名opencode@131934196、版本sa=2.0.31@131919921、主入口@133155794。因此原生普通管道合同为 `opencode v2.0.31\n`；正式工具实测17字符、trim后单行、无ANSI，吻合而旧regex拒绝。仅增加lowercase品牌后literal v的完整版本行，不搜索任意数字、不扩大其他品牌/大小写/ANSI/未知major；prefix不得跨行。错误仅返回固定format枚举、字符/行数及ANSI布尔，不输出原始stdout/stderr，即使看似版本也不泄漏未知程序载荷。版本通过不证明服务、目录、权益或实际执行通过。
 - Linux 默认服务 registry 按 inode/dev/nlink/mode/UID/大小/mtime/ctime 检查，读取前后检查父目录身份与 no-follow 祖先；不为其 chmod 或创建目录。只接受 http://127.0.0.1:port/，密码保留 Host 内存。核对 /proc/PID/exe、UID 及 /api/info 的 PID/版本/URL；registry 在结束时复验，拒绝来源改变。Windows/macOS ACL/进程身份未验证则显式不支持。
 - API 函数只接受固定 GET 路径，取消/超时/总字节有界，禁止重定向，错误统一安全文案。相同 project directory 的包装响应必须一致；查询前后再次读取 integration/provider，检测变化。不访问全局事件、credential、session 或写 API。
 - 原生第一 connection 决定元数据来源，不在失效或 env 来源后尝试其他账号；只支持无状态错误的 key/oauth credential。provider/model/variant 的认证、地址和 headers/body 覆盖保守拒绝。模型与 variant 用可逆 tuple 编码，default effort 仅为诊断，不虚构强度。

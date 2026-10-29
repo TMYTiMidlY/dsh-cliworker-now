@@ -3,6 +3,7 @@ import { HarnessLegacyHistory } from './harness-legacy-history.tsx'
 import { ConversationTimeline } from './conversation-timeline.tsx'
 import { displayModelName } from '../shared/model-presentation.ts'
 import { operationMessage } from './operation-error.ts'
+import { schedulingLabel } from '../shared/scheduling.ts'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Button,
@@ -557,6 +558,9 @@ function SessionPanel({
           </>
         )}
       </header>
+      {selected && snapshot.scheduling?.[selected] && snapshot.scheduling[selected]!.reason !== 'running' && (
+        <div className="cwn-notice" role="status" aria-label="调度状态">{schedulingLabel(snapshot.scheduling[selected]!)}</div>
+      )}
       {selected && worker && !retired && !running && (resumeBlocked || startingNew) && (
         <div className="cwn-resume-banner" role="status" aria-label="对话状态">
           <span>
@@ -742,7 +746,7 @@ function SessionPanel({
               </nav>
             )}
             {snapshot.configuring && (
-              <div className="cwn-notice">等待确认设定。请在主对话的问题卡片中选择。</div>
+              <div className="cwn-notice">正在校验派遣参数与原生账号，请稍候。</div>
             )}
             {!connecting &&
               !streamError &&
@@ -837,7 +841,7 @@ function SessionPanel({
             aria-busy={running || false}
           >
             {snapshot.configuring && (
-              <div className="cwn-notice">等待确认设定。请在主对话的问题卡片中选择。</div>
+              <div className="cwn-notice">正在校验派遣参数与原生账号，请稍候。</div>
             )}
             {!history && snapshot.truncated && (
               <div className="cwn-history-start">

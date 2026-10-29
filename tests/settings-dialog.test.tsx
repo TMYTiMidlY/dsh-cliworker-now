@@ -255,6 +255,30 @@ async function setupWarm(overrides: Record<string, any> = {}, ids: readonly CliI
   return { ...t, metadata, enabled, settingsRead: cliSettings, savedPreference: configure }
 }
 
+it('global concurrency pane reads on navigation and saves through the formal Remote without touching model defaults or CLI terminals', async () => {
+  const state = { limit: 2, maxLimit: 12, source: 'initial', globalActive: 8, globalQueued: 3, parentActive: 1, parentQueued: 1, writable: true }
+  const readConcurrency = vi.fn(async () => remote(state)), save = deferred(), configureConcurrency = vi.fn(() => save.promise)
+  const t = await setup({ readConcurrency, configureConcurrency })
+  expect(readConcurrency).not.toHaveBeenCalled()
+  await t.click('并发与排队设置')
+  expect(readConcurrency).toHaveBeenCalledTimes(1); expect(t.text()).toContain('影响所有 CLI 和父会话'); expect(t.text()).toContain('全局 8/2')
+  await t.click('全局最大并发'); await t.click('12')
+  expect(configureConcurrency).toHaveBeenCalledWith('simulation-parent', 12, expect.any(AbortSignal))
+  expect(t.button('全局最大并发').props.disabled).toBe(true); expect(t.text()).toContain('正在保存')
+  await act(async () => save.resolve(remote({ ...state, limit: 12, source: 'persisted' })))
+  expect(t.text()).toContain('已保存并立即应用'); expect(t.text()).toContain('全局 8/12')
+  expect(t.configure).not.toHaveBeenCalled(); expect(terminal.started).not.toHaveBeenCalled()
+})
+it('concurrency pane keeps failed selection/error and never guesses a usable default on denied or untrusted reads', async () => {
+  const base = { limit: 3, maxLimit: 12, source: 'persisted', globalActive: 0, globalQueued: 0, parentActive: 0, parentQueued: 0, writable: true }
+  const readConcurrency = vi.fn(async () => remote(base)), configureConcurrency = vi.fn(async () => { throw new Error('SIMULATED persistence denied') })
+  const t = await setup({ readConcurrency, configureConcurrency }); await t.click('并发与排队设置')
+  await t.click('全局最大并发'); await t.click('8')
+  expect(t.text()).toContain('SIMULATED persistence denied'); expect(t.button('全局最大并发').findAllByType('span')[0]!.children).toContain('8')
+  readConcurrency.mockResolvedValueOnce(remote({ ...base, limit: null, source: 'unavailable', writable: false, reason: '私有设置无法核验' }) as any)
+  await t.click('刷新并发状态')
+  expect(t.button('全局最大并发').props.disabled).toBe(true); expect(t.text()).toContain('私有设置无法核验'); expect(t.text()).toContain('0/—')
+})
 it('warms every enabled CLI model and effort list once and reuses the receipts on close/reopen and navigation', async () => {
   const t = await setupWarm()
   expect(t.accountStatus).toHaveBeenCalledTimes(CLI_IDS.length)

@@ -14,6 +14,13 @@ let data = cursor ? { sessionId: id, configOptions: [
   { id: 'permissionMode', category: '_permission', type: 'select', currentValue: 'auto', options: ['default', 'auto', 'bypassPermissions'].map(value => ({ value, name: value })), _meta: { 'minimax-code/scope': 'process' } },
   { id: 'thinkingEffort', category: 'thought_level', type: 'select', currentValue: 'low', options: ['low', 'high'].map(value => ({ value, name: value })) },
 ] }
+if (!cursor && scenario === 'exact-current') {
+  data.configOptions[2].currentValue = 'max'; data.configOptions[2].options = [{ value: 'max', name: 'Max' }]
+}
+if (!cursor && scenario === 'unconfirmed-model') {
+  const other = 'm:minimax:synthetic-other:u'
+  data.configOptions[0].options.push({ value: other, name: 'Synthetic other' }); data.configOptions[0].currentValue = other
+}
 const reply = (q, result) => out({ jsonrpc: '2.0', id: q.id, result })
 const update = (kind, extra) => out({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: id, update: { sessionUpdate: kind, ...extra } } })
 let pending
@@ -32,6 +39,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   }
   if (q.method === 'session/set_config_option') {
     if (typeof q.params.value !== 'string') process.exit(21)
+    if (scenario === 'exact-current' && ['model', 'thinkingEffort'].includes(q.params.configId)) process.exit(42)
     data.configOptions.find(x => x.id === q.params.configId).currentValue = scenario === 'unconfirmed-' + q.params.configId ? 'wrong' : q.params.value
     return reply(q, { configOptions: data.configOptions })
   }

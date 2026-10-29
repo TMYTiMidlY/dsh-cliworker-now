@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest'
-import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, symlink, link, stat } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, symlink, link, stat, chmod } from 'node:fs/promises'
 import { join, posix, win32 } from 'node:path'
 import { tmpdir } from 'node:os'
 import { DatabaseSync } from 'node:sqlite'
@@ -159,6 +159,10 @@ it.each(['pi', 'omp'] as const)(
       const f = await fixture(cli),
         outside = join(f.root, 'external')
       await writeFile(outside, 'SYNTHETIC_SECRET_FROM_OUTSIDE', { mode: 0o644 })
+      if (process.platform !== 'win32') {
+        await chmod(outside, 0o644)
+        expect((await stat(outside)).mode & 0o777).toBe(0o644)
+      }
       const file = join(f.global, cli === 'pi' ? 'auth.json' : 'models.yml')
       if (type === 'symlink') await symlink(outside, file)
       else await link(outside, file)

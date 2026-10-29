@@ -224,12 +224,14 @@ describe('scheduler, cancellation and session continuity', () => {
     expect(() => runtime.assertAccountIdle('antigravity')).toThrow('无法确认 CLI 进程已清理')
   })
   it('runs at most two and serializes writers to the same canonical directory', async () => {
-    const { runtime, backend, project, root } = setup()
+    const { runtime, backend, project, root } = setup({ maxConcurrent: 2 })
     const other = join(root, 'other')
     mkdirSync(other)
     const a = runtime.submit('p', project, 'a', 'a', pref, 'accept-edits')
     const b = runtime.submit('p', project, 'b', 'b', pref, 'accept-edits')
-    const c = runtime.submit('p', other, 'c', 'c', pref, 'accept-edits')
+    // Parent FIFO now deliberately retains p's blocked writer. A separate
+    // parent/project still uses the free slot without bypassing that barrier.
+    const c = runtime.submit('other-parent', other, 'c', 'c', pref, 'accept-edits')
     await tick()
     expect(backend.calls).toHaveLength(2)
     expect(b.worker.status).toBe('queued')

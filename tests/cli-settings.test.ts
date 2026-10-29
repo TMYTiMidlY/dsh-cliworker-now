@@ -258,7 +258,7 @@ function fixture() {
     start: () =>
       tools
         .get('cliworker_start')
-        .execute({ cli: 'antigravity', title: 'Synthetic', prompt: 'Synthetic task' }, { agent, signal }),
+        .execute({ cli: 'antigravity', title: 'Synthetic', prompt: 'Synthetic task', model: preference.model, effort: preference.effort, role: 'none' }, { agent, signal }),
   }
 }
 
@@ -442,18 +442,20 @@ describe('profile-wide CLI enablement', () => {
     expect(jobs.start).not.toHaveBeenCalled()
   })
 
-  it('checks disabled state after model selection before persisting or publishing a task', async () => {
+  it('checks disabled state after parameter authorization before persisting or publishing a task', async () => {
     const { service, start, ask, jobs, storage, project, signal } = fixture()
-    const answer = deferred<unknown>()
-    ask.mockReturnValueOnce(answer.promise)
+    const checked = deferred<unknown>()
+    const selection = vi.spyOn(service as any, 'querySelection').mockReturnValueOnce(checked.promise)
     const pending = start()
     const rejected = expect(pending).rejects.toThrow('已关闭')
-    await vi.waitFor(() => expect(ask).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(selection).toHaveBeenCalledTimes(1))
     await service.setCliEnabled('parent', 'antigravity', false, signal)
-    answer.resolve({ answers: [{ id: 'cliworker_model', selected: ['fixture'] }] })
+    checked.resolve({ preference, binding: 'synthetic-settings-account' })
     await rejected
+    expect(ask).not.toHaveBeenCalled()
     expect(storage.preference(project, 'antigravity')).toBeUndefined()
     expect(jobs.start).not.toHaveBeenCalled()
+    selection.mockRestore()
   })
 
   it('refuses a configuration change completed after the CLI was disabled', async () => {
@@ -545,17 +547,16 @@ describe('account-supported model selection', () => {
     notice: '【模拟】仅已确认账号支持的模型',
   }
 
-  it('asks complete setup using deduplicated names and saves the exact free route only after selection', async () => {
+  it('accepts the Agent’s exact free model route without model or role questions', async () => {
     const { service, ask, storage, project, signal, backend } = fixture()
     vi.mocked(catalogFor).mockResolvedValue(supported)
     ask
       .mockResolvedValueOnce({ answers: [{ id: 'cliworker_model', selected: ['GLM-5.3-Flash'] }] })
       .mockResolvedValueOnce({ answers: [{ id: 'cliworker_role', selected: ['不使用角色预设'] }] })
     const agent = await (service as any).parent('parent')
-    const setup = await (service as any).chooseDispatch(agent, signal, 'antigravity')
+    const setup = await (service as any).chooseDispatch(agent, signal, 'antigravity', 'accept-edits', undefined, undefined, 'native-free/glm-5.3-flash', 'default', 'none')
     const chosen = setup.preference
-    const options = ask.mock.calls[0]![0].questions[0].options
-    expect(options).toEqual([{ label: 'GLM-5.3-Flash' }, { label: 'GLM-5.3' }])
+    expect(ask).not.toHaveBeenCalled()
     expect(chosen).toEqual({ cli: 'antigravity', model: 'native-free/glm-5.3-flash', effort: 'default' })
     expect(storage.preference(project, 'antigravity')).toEqual(chosen)
     expect(backend.spawn).not.toHaveBeenCalled()
@@ -574,8 +575,7 @@ describe('account-supported model selection', () => {
     const agent = await (service as any).parent('parent')
     expect((await (service as any).chooseDispatch(agent, signal, 'antigravity')).preference).toEqual(saved)
     expect(storage.preference(project, 'antigravity')).toEqual(saved)
-    expect(ask).toHaveBeenCalledTimes(1)
-    expect(ask.mock.calls[0]![0].questions[0].id).toBe('cliworker_reuse')
+    expect(ask).not.toHaveBeenCalled()
     expect(backend.spawn).not.toHaveBeenCalled()
   })
 
@@ -682,7 +682,7 @@ describe('saved Worker model directory', () => {
       .mockResolvedValueOnce({ answers: [{ id: 'cliworker_model', selected: ['Synthetic fixture'] }] })
       .mockResolvedValueOnce({ answers: [{ id: 'cliworker_role', selected: ['不使用角色预设'] }] })
     const agent = await (f.service as any).parent('parent')
-    await (f.service as any).chooseDispatch(agent, f.signal, 'antigravity')
+    await (f.service as any).chooseDispatch(agent, f.signal, 'antigravity', 'accept-edits', undefined, undefined, 'fixture', 'low', 'none')
     vi.mocked(catalogFor).mockClear()
     vi.mocked(readCliAccountBinding).mockClear()
     expect(JSON.parse(await f.service.catalogForWorker('parent', f.worker.id, f.signal))).toEqual(catalog)

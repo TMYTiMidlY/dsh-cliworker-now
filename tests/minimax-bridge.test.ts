@@ -38,6 +38,13 @@ describe('MiniMax synthetic owned native runner', () => {
     expect(frames.at(-1)).toMatchObject({ status: 'SUCCESS', response: 'HELLO SYNTHETIC' })
     expect(JSON.stringify(frames)).not.toContain('OLD HISTORY')
   })
+  it('runs with exact current model/max without forbidden redundant setters', async () => {
+    const frames: any[] = [], config = { ...params('exact-current'), preference: { ...params('exact-current').preference, effort: 'max' } }, controller = new AbortController()
+    const io = createNativeIO(config, (line: string) => frames.push(JSON.parse(line)), controller.signal)
+    const open = io.openStdio.bind(io); io.openStdio = (_argv: string[], options: any) => open([process.execPath, fixture, 'acp'], options)
+    await runNativeMiniMax(config, io); await io.close()
+    expect(frames.at(-1)).toMatchObject({ status: 'SUCCESS', response: 'HELLO SYNTHETIC' }); expect(JSON.stringify(frames)).not.toContain('PRIVATE_')
+  })
   it('rejects planning before any spawn', async () => {
     let spawned = false
     await expect(runNativeMiniMax({ ...params('success'), mode: 'plan' }, { signal: new AbortController().signal, openStdio: () => { spawned = true } })).rejects.toThrow()
