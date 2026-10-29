@@ -11,7 +11,7 @@
 - 本补丁后的首份完整运行断言 **5634PASS/0FAIL/17SKIP**，但有1个未处理cleanup Promise使最终exit1，不能称全绿：[原报告](../.cache/conservative-close-r19-frozen-tests.json)。栈定位Pi/OMP合成环境测试finally未await launch.cleanup，afterEach移除fixture root后异步seal树才lstat而ENOENT；父仅补该测试await，不改产品seal/忽略错误或增deadline，[两环境关联例2PASS/70筛选SKIP](../.cache/conservative-close-r19-cleanup-fixture.json)，再冻结全部808输入重跑全量。旧5630项冻结只覆盖补丁前，不替代新验收。最终[新冻结报告](../.cache/conservative-close-r19b-frozen-tests.json)实际 **5634PASS/0FAIL/17SKIP、250 suites、exit0，无未处理错误**；[808个明确代码/测试/构建输入](../.cache/conservative-close-r19b-code-inputs.json)复核前后全同，不冒文档/外部profile冻结。Host/Client typecheck及38项OpenSpec strict、diff通过；保留既有archive重叠提示，不据strict通过归档未完成change。
 - 两份公开研究稿及中英README/usage经只读独审未见真凭据/个人业务正文或导入/全部CLI实机已成的越界宣称；已修英文旧版本说明、中文旧CLI数字、历史段落时态并泛化研究稿本机路径。仅明确候选198文件做有限凭据literal扫描，未命中；不是所有secret格式或整个工作区无秘密的证明。实际profile备份/恢复回执/未完草稿均继续ignored/private，不入Git或包。
 - 本轮热更新后宿主PID363444、startTicks4223119与boot_id前后一致，Client字节不变，未重启DSH。既有GUI URL无登录cookie的独立GET为401，未绕认证、未新开服务器，也未声称做了浏览器视觉验收；实际正式Tool/Native Session链已完成上述Worker目录、首轮及续聊核验。
-- 当前包名/0.8.2不变。按用户明确收口授权仅整理本会话相关成果至既有分支，具体commit/远端SHA以最终Git回执核对，不发布PR/tag/Release/npm。原auth供应商导入/runtime/tools/UI及未验平台继续保留待办，store合成能力不冒真实导入；完整Gemini文档审读也未以小口令冒验收。
+- 当前包名/0.8.2不变。按用户明确收口授权仅整理本会话相关198文件，源码提交 `214b36966ff49bb7649d93cce8f95978fb6a4b22` 已推送原分支并由独立ls-remote核本地/远端SHA一致、worktree/index干净。首次HTTPS push缺凭据助手exit128保留；核已有gh登录确为仓库所属TMYTiMidlY后，仅该次Git进程使用原有凭据助手完成推送，不改remote、全局配置或登录态，不输出token。此后仅叠加本交付记录/任务勾选的文档fixup，不改源代码或重写已交付提交；最终HEAD以最后Git回执核对。不发布PR/tag/Release/npm。原auth供应商导入/runtime/tools/UI及未验平台继续保留待办，store合成能力不冒真实导入；完整Gemini文档审读也未以小口令冒验收。
 
 ## 2026-10-29 Round17–18：按人工指令保守收口，优先恢复AGY（进行中）
 
