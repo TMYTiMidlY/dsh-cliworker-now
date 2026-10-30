@@ -2,7 +2,7 @@
 // this API through model tools. Future trusted adapters must independently prove
 // coherent generation/source binding, whitelist, format and native identity.
 // A prepare/verify callback existing or returning an identity is not that proof.
-import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import {
   AuthDirectory, cancelled, checkPaths, createAuthDirectory,
@@ -27,7 +27,14 @@ const oauthPolicySchema = z.object({
   cli: z.literal('antigravity'), authMethod: z.literal('consumer'), route: z.literal('native'),
   mode: z.enum(['refresh-token', 'access-only']),
 }).strict()
-const policySchema = z.discriminatedUnion('kind', [legacyPolicySchema, oauthPolicySchema])
+const miniMaxPolicySchema = z.object({
+  kind: z.literal('minimax-native-principal'), policyVersion: z.literal(1),
+  cli: z.literal('minimax'), buildEnv: z.literal('prod'), format: z.literal('mcode-0.6.12-file-v1'),
+  region: z.enum(['cn', 'en']), configPolicy: z.enum(['empty', 'native-default', 'account-only']), refreshGroup: digest,
+  configDigest: digest.optional(),
+}).strict().refine(value => (value.configPolicy === 'account-only') === (value.configDigest !== undefined))
+const currentPolicySchema = z.discriminatedUnion('kind', [oauthPolicySchema, miniMaxPolicySchema])
+const policySchema = z.discriminatedUnion('kind', [legacyPolicySchema, oauthPolicySchema, miniMaxPolicySchema])
 const legacyMaterialSchema = z.object({
   // Historical field name: an identity digest, not necessarily remote principal.
   materialRevision: opaque('m'), principal: digest, rootIdentity: z.string().regex(/^\d+:\d+$/),
@@ -41,11 +48,16 @@ const legacyRegistrySchema = z.object({ schema: z.literal(1), records: z.array(l
 const registryV2Schema = z.object({ schema: z.literal(2), records: z.array(recordSchema).max(128), requests: requestsSchema }).strict()
 const registrySchema = z.discriminatedUnion('schema', [legacyRegistrySchema, registryV2Schema])
 const legacyManifestSchema = legacyMaterialSchema.extend({ schema: z.literal(1), id: opaque('ap'), cli: cliSchema }).strict()
-const oauthManifestSchema = legacyMaterialSchema.extend({ identityPolicy: oauthPolicySchema, schema: z.literal(2), id: opaque('ap'), cli: cliSchema }).strict()
-const manifestSchema = z.discriminatedUnion('schema', [legacyManifestSchema, oauthManifestSchema])
+const currentManifestSchema = legacyMaterialSchema.extend({ identityPolicy: currentPolicySchema, schema: z.literal(2), id: opaque('ap'), cli: cliSchema }).strict()
+const manifestSchema = z.discriminatedUnion('schema', [legacyManifestSchema, currentManifestSchema])
 const legacyIdentitySchema = z.object({ kind: z.enum(['native-principal', 'api-credential']), value: z.string().min(1).max(8192) }).strict()
 const oauthIdentitySchema = oauthPolicySchema.extend({ value: z.string().min(1).max(8192).refine(value => Boolean(value.trim())) }).strict()
-const identitySchema = z.union([legacyIdentitySchema, oauthIdentitySchema])
+const miniMaxIdentitySchema = z.object({
+  kind: z.literal('native-principal'), value: z.string().min(1).max(8192), identityPolicy: miniMaxPolicySchema,
+}).strict()
+const identitySchema = z.union([legacyIdentitySchema, oauthIdentitySchema, miniMaxIdentitySchema])
+const miniMaxRefreshGroup = (value: string, region: 'cn' | 'en') => createHash('sha256')
+  .update(JSON.stringify(['native-auth-minimax-refresh-group', 1, 'prod', region, value])).digest('hex')
 const requestSchema = z.object({ requestId: z.string().regex(/^[A-Za-z0-9_.:-]{1,128}$/) }).strict()
 const importSchema = requestSchema.extend({
   cli: cliSchema, label: labelSchema, id: opaque('ap').optional(), expectedRecordRevision: z.number().int().min(1).optional(),
@@ -76,6 +88,8 @@ export type NativeAuthIdentityPolicy = Readonly<z.infer<typeof policySchema>>
 const legacyPolicy: NativeAuthIdentityPolicy = Object.freeze({ kind: 'legacy-v1' })
 const samePolicy = (a: NativeAuthIdentityPolicy, b: NativeAuthIdentityPolicy) => JSON.stringify(a) === JSON.stringify(b)
 function policyFor(identity: NativeAuthIdentity): NativeAuthIdentityPolicy {
+  if (identity.kind === 'native-principal' && 'identityPolicy' in identity)
+    return Object.freeze(miniMaxPolicySchema.parse(identity.identityPolicy))
   if (identity.kind !== 'oauth-credential') return legacyPolicy
   const { value: _secret, ...policy } = identity
   return Object.freeze(oauthPolicySchema.parse(policy))
@@ -84,6 +98,28 @@ export type NativeAuthCli = z.infer<typeof cliSchema>
 /** The ONLY public store DTO. Never spread a private record into it. */
 export type NativeAuthDescriptor = Readonly<z.infer<typeof descriptorSchema>>
 export type NativeAuthIdentity = Readonly<z.infer<typeof identitySchema>>
+/** Host-only factory. Its input must already be a freshly proved Native
+ * principal, not an email, cached label, token claim or model-list result. */
+export function miniMaxProfileIdentity(value: string, region: 'cn' | 'en', configPolicy: 'empty' | 'native-default'): NativeAuthIdentity {
+  const input = z.object({ value: z.string().min(1).max(8192), region: z.enum(['cn', 'en']), configPolicy: z.enum(['empty', 'native-default']) }).strict().safeParse({ value, region, configPolicy })
+  if (!input.success) fail('INVALID_INPUT')
+  const selected = Object.freeze({
+    kind: 'minimax-native-principal' as const, policyVersion: 1 as const, cli: 'minimax' as const,
+    buildEnv: 'prod' as const, format: 'mcode-0.6.12-file-v1' as const,
+    region: input.data.region, configPolicy: input.data.configPolicy,
+    refreshGroup: miniMaxRefreshGroup(input.data.value, input.data.region),
+  })
+  return Object.freeze({ kind: 'native-principal' as const, value: input.data.value, identityPolicy: selected })
+}
+/** Account-only material has a separate signed protected-settings expectation;
+ * it never upgrades an old empty/default material or carries business agents. */
+export function miniMaxAccountProfileIdentity(value: string, region: 'cn' | 'en', configDigest: string): NativeAuthIdentity {
+  const base = miniMaxProfileIdentity(value, region, 'empty')
+  if (!('identityPolicy' in base)) fail('INVALID_INPUT')
+  const selected = miniMaxPolicySchema.safeParse({ ...base.identityPolicy, configPolicy: 'account-only', configDigest })
+  if (!selected.success) fail('INVALID_INPUT')
+  return Object.freeze({ kind: 'native-principal' as const, value, identityPolicy: Object.freeze(selected.data) })
+}
 export type NativeAuthImport = z.input<typeof importSchema> & { signal?: AbortSignal }
 export type NativeAuthManage = z.input<typeof manageSchema>
 /** Private trusted-adapter context. No principal/raw credentials are returned. */
@@ -167,6 +203,16 @@ export class NativeAuthStore {
       return this.#hash(['native-auth-oauth-credential', identity.policyVersion, identity.cli,
         identity.authMethod, identity.route, identity.mode, identity.value])
     }
+    if (identity.kind === 'native-principal' && 'identityPolicy' in identity) {
+      const policy = identity.identityPolicy
+      if (cli !== 'minimax' || policy.refreshGroup !== miniMaxRefreshGroup(identity.value, policy.region)) fail('IDENTITY_MISMATCH')
+      if (policy.configPolicy === 'account-only') {
+        return this.#hash(['native-auth-minimax-account-only', policy.policyVersion, policy.cli,
+          policy.buildEnv, policy.format, policy.region, policy.configDigest, policy.refreshGroup, identity.value])
+      }
+      return this.#hash(['native-auth-minimax-native-principal', policy.policyVersion, policy.cli,
+        policy.buildEnv, policy.format, policy.region, policy.configPolicy, policy.refreshGroup, identity.value])
+    }
     // Exact schema1 algorithm/order: do not add CLI, policy or a new prefix.
     // legacy-v1 means this opaque algorithm, NOT an inferred native/API kind.
     return this.#hash(identity)
@@ -223,7 +269,7 @@ export class NativeAuthStore {
         manifest.principal !== material.principal || manifest.rootIdentity !== material.rootIdentity || native.nativeIdentity !== material.rootIdentity) fail('STORE_UNAVAILABLE')
       if (manifest.schema === 1) {
         if (material.identityPolicy.kind !== 'legacy-v1') fail('STORE_UNAVAILABLE')
-      } else if (material.identityPolicy.kind !== 'oauth-credential' || material.identityPolicy.cli !== record.cli ||
+      } else if (material.identityPolicy.kind === 'legacy-v1' || material.identityPolicy.cli !== record.cli ||
         !samePolicy(manifest.identityPolicy, material.identityPolicy)) fail('STORE_UNAVAILABLE')
       return Object.freeze({ id: record.id, cli: record.cli, materialRevision: revision, nativeRoot: native.path,
         identityPolicy: Object.freeze({ ...material.identityPolicy }),
@@ -248,7 +294,7 @@ export class NativeAuthStore {
   #publish(root: AuthDirectory, registry: Registry, requestId: string, input: string, result: NativeAuthDescriptor) {
     registry.requests.push({ requestId, input, result })
     // Bounded capacity is explicit and fail-closed, not lossy dedup eviction.
-    // Pure legacy trees stay schema1. The first successful OAuth publication
+    // Pure legacy trees stay schema1. The first successful nonlegacy policy
     // upgrades only the atomic registry; old material/receipt bytes remain valid.
     if (registry.schema === 1 && registry.records.some(r => r.materials.some(m => m.identityPolicy.kind !== 'legacy-v1'))) fail('STORE_UNAVAILABLE')
     const stored = registry.schema === 1 ? legacyRegistrySchema.parse({ ...registry, records: registry.records.map(record => ({
@@ -279,6 +325,19 @@ export class NativeAuthStore {
       this.#publish(root, registry, parsed.requestId, hash, result)
       return result
     } catch (error) { return safeError(error) } finally { this.#release(root, lease) }
+  }
+  /** Host-private dedup preflight: read only the already committed receipt,
+   * without requiring a now-missing export directory or re-verifying Native.
+   * This is not a current availability/identity proof or a management bypass.
+   * The eventual import retains its own atomic replay/conflict check. */
+  lookupImport(input: NativeAuthImport): NativeAuthDescriptor | undefined {
+    let parsed: z.infer<typeof importSchema>
+    const { signal, ...parameters } = input
+    try { parsed = importSchema.parse(parameters) } catch { fail('INVALID_INPUT') }
+    cancelled(signal)
+    const root = this.#root()
+    try { return this.#replay(this.#load(root), parsed.requestId, this.#hash(['import', parsed])) }
+    catch (error) { return safeError(error) } finally { root.close() }
   }
   async import(input: NativeAuthImport, prepare: NativeAuthPrepare, verify: NativeAuthVerify): Promise<NativeAuthDescriptor> {
     let parsed: z.infer<typeof importSchema>
@@ -368,7 +427,7 @@ export class NativeAuthStore {
         // mutate critical registry/key data. Recheck before the commit point.
         const latest = this.#load(root)
         if (this.#hash(latest) !== this.#hash(registry)) fail('CONFLICT')
-        if (identityPolicy.kind === 'oauth-credential') registry.schema = 2
+        if (identityPolicy.kind !== 'legacy-v1') registry.schema = 2
         const record: RecordEntry = prior ?? { id, cli: parsed.cli, label: parsed.label, materialRevision: revision, recordRevision: 0, enabled: true, materials: [] }
         record.label = parsed.label; record.materialRevision = revision; record.recordRevision++; record.materials.push(entry)
         if (!prior) registry.records.push(record)

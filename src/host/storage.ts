@@ -60,7 +60,11 @@ import {
   type WorkerEvent,
 } from '../shared/types.ts'
 
+import type { AuthProfilePin } from '../shared/auth-profiles.ts'
+import { profileSelection } from './native-auth-profile-scope.ts'
+const authProfilePinSchema = z.object({ id: z.string().regex(/^ap_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/), materialRevision: z.string().regex(/^m_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/) }).strict()
 const preferenceSchema = z.object({
+  authProfile: authProfilePinSchema.optional(),
   cli: z.enum(CLI_IDS).optional(),
   model: z.string().min(1),
   effort: z.enum(EFFORTS),
@@ -538,6 +542,7 @@ export class WorkerStorage {
     if (!existsSync(path)) return undefined
     const value = projectPreferenceSchema.parse(JSON.parse(readFileSync(path, 'utf8')))
     if ((value.cli ?? 'antigravity') !== cli) throw new Error('项目偏好的 CLI 标识不匹配')
+    if (profileSelection(value)) throw new Error('原生默认设置包含不匹配的导入账号作用域')
     return value
   }
   runningMessageSettings(project: string, cli: CliId): RunningMessageSettings {
@@ -569,6 +574,7 @@ export class WorkerStorage {
   setPreference(project: string, preference: Preference): void {
     if (preference.cli && isRetiredCli(preference.cli)) throw new Error(RETIRED_HARNESS_NOTICE)
     const value = preferenceSchema.parse(preference)
+    if (profileSelection(value)) throw new Error('此入口仅保存原生默认设置')
     const cli = value.cli ?? 'antigravity'
     const previous = this.readProjectPreference(project, cli)
     atomicJSON(join(this.directory, `${this.projectKey(project, cli)}.preference.json`), {
@@ -576,8 +582,16 @@ export class WorkerStorage {
       ...value,
     })
   }
-  dispatchSetup(project: string, cli: CliId): DispatchSetup | undefined {
+  dispatchSetup(project: string, cli: CliId, profile?: AuthProfilePin): DispatchSetup | undefined {
     if (isRetiredCli(cli)) return undefined
+    if (profile !== undefined) {
+      const pin = profileSelection({ cli, model: 'scope', effort: 'default', authProfile: profile })!
+      const path = join(this.directory, `${this.profileSetupKey(project, cli, pin)}.profile-setup.json`)
+      if (!existsSync(path)) return undefined
+      const value = z.object({ policy: z.literal(1), project: z.string(), cli: z.enum(CLI_IDS), setup: dispatchSetupSchema }).strict().parse(JSON.parse(readFileSync(path, 'utf8')))
+      if (value.project !== project || value.cli !== cli || JSON.stringify(profileSelection(value.setup.preference)) !== JSON.stringify(pin)) throw new Error('账号档案派遣设定身份不匹配')
+      return value.setup
+    }
     const value = this.readProjectPreference(project, cli)
     // Missing fields are legacy/incomplete selections, never an implicit no-role choice.
     if (value?.dispatchRole === undefined || value.dispatchBinding === undefined) return undefined
@@ -590,12 +604,23 @@ export class WorkerStorage {
   setDispatchSetup(project: string, setup: DispatchSetup): void {
     if (setup.preference.cli && isRetiredCli(setup.preference.cli)) throw new Error(RETIRED_HARNESS_NOTICE)
     const value = dispatchSetupSchema.parse(setup)
-    const cli = value.preference.cli ?? 'antigravity'
+    const cli = value.preference.cli ?? 'antigravity', profile = profileSelection(value.preference)
+    if (profile) {
+      atomicJSON(join(this.directory, `${this.profileSetupKey(project, cli, profile)}.profile-setup.json`), { policy: 1, project, cli, setup: value })
+      return
+    }
     atomicJSON(join(this.directory, `${this.projectKey(project, cli)}.preference.json`), {
       ...value.preference,
       dispatchRole: value.role,
       dispatchBinding: value.binding,
     })
+  }
+  private profileSetupKey(project: string, cli: CliId, pin: AuthProfilePin): string {
+    return createHash('sha256').update(JSON.stringify(['native-profile-setup', 1, project, cli, pin.id, pin.materialRevision])).digest('hex')
+  }
+  private conversationDomainPath(parent: string, project: string, cli: CliId, profile: AuthProfilePin | null): string {
+    const key = createHash('sha256').update(JSON.stringify(['native-profile-conversation-setup', 1, parent, project, cli, profile?.id ?? 'native', profile?.materialRevision ?? null])).digest('hex')
+    return join(this.directory, `${key}.conversation-domain-setup.json`)
   }
   private conversationKey(parent: string, project: string, cli: CliId): string {
     z.string().min(1).parse(parent)
@@ -605,10 +630,17 @@ export class WorkerStorage {
       .update(JSON.stringify([parent, project, cli]))
       .digest('hex')
   }
-  conversationSetup(parent: string, project: string, cli: CliId): DispatchSetup | undefined {
+  conversationSetup(parent: string, project: string, cli: CliId, profile?: AuthProfilePin | null): DispatchSetup | undefined {
     if (isRetiredCli(cli)) return undefined
-    const path = join(this.directory, `${this.conversationKey(parent, project, cli)}.conversation-setup.json`)
-    if (!existsSync(path)) return undefined
+    const selected = profile ? profileSelection({ cli, model: 'scope', effort: 'default', authProfile: profile })! : profile
+    const path = selected === undefined
+      ? join(this.directory, `${this.conversationKey(parent, project, cli)}.conversation-setup.json`)
+      : this.conversationDomainPath(parent, project, cli, selected)
+    if (!existsSync(path)) {
+      if (selected === undefined) return undefined
+      const current = this.conversationSetup(parent, project, cli)
+      return current && JSON.stringify(profileSelection(current.preference) ?? null) === JSON.stringify(selected) ? current : undefined
+    }
     const value = conversationSetupSchema.parse(JSON.parse(readFileSync(path, 'utf8')))
     if (
       value.parent !== parent ||
@@ -617,20 +649,19 @@ export class WorkerStorage {
       (value.setup.preference.cli ?? 'antigravity') !== cli
     )
       throw new Error('对话派遣设定的身份不匹配')
+    if (selected !== undefined && JSON.stringify(profileSelection(value.setup.preference) ?? null) !== JSON.stringify(selected)) throw new Error('对话账号档案作用域不匹配')
     return value.setup
   }
   setConversationSetup(parent: string, project: string, setup: DispatchSetup): void {
     if (setup.preference.cli && isRetiredCli(setup.preference.cli)) throw new Error(RETIRED_HARNESS_NOTICE)
     const value = dispatchSetupSchema.parse(setup)
     const cli = value.preference.cli ?? 'antigravity'
-    const key = this.conversationKey(parent, project, cli)
-    atomicJSON(join(this.directory, `${key}.conversation-setup.json`), {
-      policy: 1,
-      parent,
-      project,
-      cli,
-      setup: value,
-    })
+    const key = this.conversationKey(parent, project, cli), profile = profileSelection(value.preference) ?? null
+    const previous = this.conversationSetup(parent, project, cli)
+    if (previous) atomicJSON(this.conversationDomainPath(parent, project, cli, profileSelection(previous.preference) ?? null), { policy: 1, parent, project, cli, setup: previous })
+    const record = { policy: 1, parent, project, cli, setup: value }
+    atomicJSON(this.conversationDomainPath(parent, project, cli, profile), record)
+    atomicJSON(join(this.directory, `${key}.conversation-setup.json`), record)
   }
   save(worker: Worker): void {
     atomicJSON(join(this.directory, `${worker.id}.worker.json`), worker)

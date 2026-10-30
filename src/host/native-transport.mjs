@@ -102,9 +102,14 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
           ? [config.nativeExecutable, ...argv.slice(1)]
           : argv
       const [program, ...args] = nativeLaunchArgv(requested)
+      // The Electron host launcher's ELECTRON_RUN_AS_NODE mode applies to THIS
+      // bridge process only; a vendor CLI child must never inherit it (mcode's
+      // runtime detects Electron and misbehaves). Deliberate explicit entries
+      // in config.env/options.env still survive the strip.
+      const { ELECTRON_RUN_AS_NODE: _hostLauncherMode, ...inherited } = process.env
       const child = spawnNativeProcess(program, args, {
         cwd: options.cwd ?? config.project,
-        env: { ...process.env, ...config.env, ...options.env },
+        env: { ...inherited, ...config.env, ...options.env },
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: false,
         detached: false,

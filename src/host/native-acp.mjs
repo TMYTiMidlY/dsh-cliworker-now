@@ -264,6 +264,7 @@ export async function runNativeAcp(config, io, settings) {
     if (initialized?.protocolVersion !== 1) throw new Error('Unsupported ACP protocol version')
     if (settings.agentName && initialized.agentInfo?.name !== settings.agentName)
       throw new Error(`${settings.name} 原生程序身份不匹配，请检查 CLI 路径`)
+    await settings.onInitialized?.(initialized)
     let state
     if (config.conversationId) {
       if (initialized.agentCapabilities?.loadSession !== true)

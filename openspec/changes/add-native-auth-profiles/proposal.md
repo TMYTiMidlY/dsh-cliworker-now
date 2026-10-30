@@ -14,6 +14,7 @@
 - AGY 首版导入新增独立的 `oauth-credential` 凭据固定模式，不冒充 `native-principal` 或 API key 身份。有已证合法 refresh-token 时固定 R0，R0 不变且其他原生检查通过才允许正常 access-token/expiry 更新；R0 改变、丢失或模式变化不得覆盖原 profile/Worker，需明确新 profile 和新 Worker。只有来源本来是已证 access-only 格式才在独立域固定 A0，不删除 refresh 字段制造此模式。首次目标原生核验也可能因轮换而导入失败。
 - 明确 OAuth 边界：pin 相同不证明当前 access-token 的远端主体、A/R 同属一个 grant 或当前授权有效；文件快照、邮箱及目录成功不能补出这项证明，仍须独立核原生材料/路由/保护和能力。本地独立保存不等于独立服务端 grant、不同账号或额外额度；原生刷新只写该 profile，轮换失败不重设 pin、不恢复旧 token、不回借来源。即使导入失败也可能影响远端 grant，不能保证复制的 refresh-token family 互不影响；插件只能对可证同身份或同 pin 域串行，不承诺控制外部刷新。
 - 本轮不接 Hub、不新增额度数字或余额工具；接口与文档保留将来的可选来源扩展，不依赖 Hub 才能启动基本账号功能。
+- 2026-10-30接续先落实MiniMax-only纵向切片，其它CLI不扩。用户明确选择“只导入账号”：不读取或复制业务智能体、业务提示、工作目录及历史；只处理登录、必要连接及隐私/全局权限，新独立档案不承诺复刻业务行为。必要保护不能安全保留仍拒绝，原账号不改。最后按人工要求核全部本轮有价值本机成果，排敏后与源码测试一起推原分支；凭据、业务原文、运行态和重复历史不上传。
 
 ## Capabilities
 
@@ -32,4 +33,5 @@
 - Client：账号页及新派遣来源选择遵循[设置页规范](../../../doc/settings-ui-design.md)；原生会话只展示其固定来源，不增加静默换号按钮。
 - 存储：新增私有目录/版本，POSIX 目录0700、文件0600；OAuth 增量需可辨别 kind/mode/策略版本和路由域的私有身份格式及冷恢复，不从旧摘要猜身份、不迁移旧 default/lxy。缺失设置及已证 lxy settings-only 链接须有独立元数据守卫，不能用现有 regular-file 快照冒完成。Windows 不以 mode 假装 ACL 已验证，缺乏已证私有存储/原生文件来源时拒绝导入。
 - 协议与安装：工具参数为加法，CLI 每次仍必填；保留 `agy_account` legacy default/lxy，双选择冲突拒绝。包名及0.8.2不变，无 Hub 依赖、不改 DSH 核心或原生 CLI。
-- 证据现状：[现有隔离规格](../../specs/cli-account-isolation/spec.md)、[已实施的参数化增量](../parameterize-worker-dispatch/specs/worker-dispatch/spec.md)是基线。只读已确认本机 AGY lxy 和 MiniMax agony 候选目录存在；未验证 wrapper 映射、未读取这些鉴权内容、未真实导入，Codex ljy 的实际根尚未知。本提案不是功能或平台验收完成声明。2026-10-26 用户已确认上述凭据固定方案并要求直接按既有目标实施；本次先有规划增量，随后仅实现 metadata 通用守卫基础并独立合成验证；store 新 kind/格式随后已有独立存储切片及合成验证；供应商授权/投影 adapter 及真实导入仍未完成，旧基础测试或该守卫通过不是这些剩余能力的验证。
+- 提案时的证据基线（历史状态）：[现有隔离规格](../../specs/cli-account-isolation/spec.md)、[已实施的参数化增量](../parameterize-worker-dispatch/specs/worker-dispatch/spec.md)是基线。只读已确认本机 AGY lxy 和 MiniMax agony 候选目录存在；未验证 wrapper 映射、未读取这些鉴权内容、未真实导入，Codex ljy 的实际根尚未知。本提案不是功能或平台验收完成声明。2026-10-26 用户已确认上述凭据固定方案并要求直接按既有目标实施；本次先有规划增量，随后仅实现 metadata 通用守卫基础并独立合成验证；store 新 kind/格式随后已有独立存储切片及合成验证；供应商授权/投影 adapter 及真实导入仍未完成，旧基础测试或该守卫通过不是这些剩余能力的验证。
+- 2026-10-30 MiniMax-only推进现状：strict source/目标投影核验、私有profile绑定、Runtime清理作用域、正式管理及选型入口和现有设置页中的独立账号控件已有源码与独立合成证据，具体以[当前实施记录](../../../doc/tasks.md)为准；原跨CLI清单仍2/17。当前实际受管来源预检只证coherent格式但A寿命不满足导入门槛，零UID/CLI/源内容写；新的独立浏览器对现GUI为401，未绕认证。vendor真实导入/目录/首轮/续聊/停止、现GUI视觉、最终全量/热装及同分支交付尚不能冒称完成。

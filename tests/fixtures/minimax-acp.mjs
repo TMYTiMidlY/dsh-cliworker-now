@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 // Explicitly SYNTHETIC native process. Does not load MiniMax/Cursor or any credentials.
 import { createInterface } from 'node:readline'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+if (process.env.SYNTHETIC_NATIVE_SPAWN_MARKER) writeFileSync(process.env.SYNTHETIC_NATIVE_SPAWN_MARKER, 'SYNTHETIC_VENDOR_FIXTURE_STARTED', { mode: 0o600 })
+if (process.env.SYNTHETIC_ENV_DUMP) writeFileSync(process.env.SYNTHETIC_ENV_DUMP, JSON.stringify(Object.keys(process.env).filter(key => key === 'ELECTRON_RUN_AS_NODE' || key.startsWith('MINIMAX_') || key.startsWith('MAVIS_')).sort()), { mode: 0o600 })
 const scenario = process.env.MINIMAX_SYNTHETIC_SCENARIO ?? 'success'
 const cursor = process.env.SYNTHETIC_CLI === 'cursor'
 const id = 'minimax-synthetic-process'
@@ -30,7 +34,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   // Must NEVER be persisted or public. Parsed assistant/tool events below remain visible.
   out({ jsonrpc: '2.0', method: 'synthetic/private', params: { token: 'PRIVATE_RAW_AUTH' } })
   process.stderr.write('PRIVATE_STDERR_AUTH\n')
-  if (q.method === 'initialize') return reply(q, { protocolVersion: 1, agentInfo: { name: scenario === 'wrong-agent' ? 'wrong' : 'minimax-code' }, agentCapabilities: { loadSession: scenario !== 'no-resume' } })
+  if (q.method === 'initialize') return reply(q, { protocolVersion: 1, agentInfo: { name: scenario === 'wrong-agent' ? 'wrong' : 'minimax-code', version: scenario === 'private-wrong-version' ? '9.9.9' : '0.6.12' }, agentCapabilities: { loadSession: scenario !== 'no-resume' } })
   if (q.method === 'session/new' || q.method === 'session/load') {
     if (q.method === 'session/load') update('agent_message_chunk', { content: { type: 'text', text: 'OLD HISTORY' } })
     if (scenario === 'wrong-session') return reply(q, { ...data, sessionId: 'different' })
@@ -40,6 +44,11 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (q.method === 'session/set_config_option') {
     if (typeof q.params.value !== 'string') process.exit(21)
     if (scenario === 'exact-current' && ['model', 'thinkingEffort'].includes(q.params.configId)) process.exit(42)
+    if (scenario === 'private-profile-drift' && process.env.SYNTHETIC_PROTECTION_ROOT) {
+      const path = join(process.env.SYNTHETIC_PROTECTION_ROOT, 'config.yaml')
+      const value = JSON.parse(readFileSync(path, 'utf8')); value.memory.enabled = true
+      writeFileSync(path, JSON.stringify(value), { mode: 0o600 })
+    }
     data.configOptions.find(x => x.id === q.params.configId).currentValue = scenario === 'unconfirmed-' + q.params.configId ? 'wrong' : q.params.value
     return reply(q, { configOptions: data.configOptions })
   }

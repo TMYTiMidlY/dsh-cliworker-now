@@ -7,6 +7,8 @@ import { dirname, isAbsolute, join, resolve, win32 } from 'node:path'
 import { safePiOmpAncestors } from './pi-omp-native.js'
 import type { AccountIdentity } from './account-identity.ts'
 import type { RuntimeConfig } from './process.ts'
+import { assertMiniMaxProfileProtection } from './minimax-profile-protection.mjs'
+import { assertMiniMaxAccountSettings } from './native-auth-minimax-settings.ts'
 import { projectMiniMaxManagedRoute } from './minimax-route.ts'
 import { MiniMaxIdentityError, miniMaxIdentityPrincipal, requestMiniMaxIdentity, waitForMiniMaxIdentity, assertMiniMaxIdentityActive, type MiniMaxIdentityOptions } from './minimax-identity.ts'
 
@@ -23,7 +25,7 @@ export function minimaxExecutable(configured?: string, platform = process.platfo
     throw new MiniMaxAccountError('Windows MiniMax Code 需要显式配置原生 mcode CLI 路径')
   return configured || join(home, '.minimax-code/bin/mcode')
 }
-export function minimaxDataRoot(config: Pick<RuntimeConfig, 'minimaxHome'> = {}, env: NodeJS.ProcessEnv = process.env): string {
+export function minimaxDataRoot(config: Pick<RuntimeConfig, 'minimaxHome' | 'minimaxRegion' | 'minimaxExpectedConfigDigest'> = {}, env: NodeJS.ProcessEnv = process.env): string {
   const path = config.minimaxHome ?? (env.MINIMAX_DATA_DIR?.trim() || env.MAVIS_DATA_DIR?.trim() || join(homedir(), '.minimax'))
   if (!text(path) || !isAbsolute(path)) throw new MiniMaxAccountError('MiniMax Code 数据目录必须是明确的绝对路径')
   return resolve(path)
@@ -37,7 +39,7 @@ export function assertMiniMaxRoute(env: NodeJS.ProcessEnv = process.env): void {
 interface FileVersion { dev: number; ino: number; size: number; mode: number; nlink: number; uid: number; gid: number }
 interface NativeDocument { value: Record<string, any>; stamp: string; fingerprint: string; version: Readonly<FileVersion> }
 /** Bounded no-follow source read. Never log raw errors or credentials. */
-async function document(path: string, signal: AbortSignal, privateFile = true, yaml = false): Promise<NativeDocument | undefined> {
+async function document(path: string, signal: AbortSignal, privateFile = true, yaml = false, observeBytes?: (bytes: Buffer) => void): Promise<NativeDocument | undefined> {
   let handle: Awaited<ReturnType<typeof open>> | undefined, bytes: Buffer | undefined
   try {
     assertMiniMaxIdentityActive(signal)
@@ -59,6 +61,7 @@ async function document(path: string, signal: AbortSignal, privateFile = true, y
     if (parentAfter.isSymbolicLink() || parentAfter.dev !== parent.dev || parentAfter.ino !== parent.ino) throw new MiniMaxAccountError()
     const stamp = (s: typeof before) => `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}:${s.mode}:${s.nlink}`
     if (bytesRead !== before.size || current.isSymbolicLink() || stamp(entry) !== stamp(before) || stamp(before) !== stamp(after) || stamp(after) !== stamp(current)) throw new MiniMaxAccountError()
+    observeBytes?.(bytes.subarray(0, bytesRead))
     const raw = bytes.subarray(0, bytesRead).toString('utf8')
     const value: unknown = yaml ? parseYaml(raw, { maxAliasCount: 0 }) ?? {} : JSON.parse(raw)
     if (!object(value)) throw new MiniMaxAccountError()
@@ -87,9 +90,13 @@ function configurationVersion(root: string, config?: NativeDocument): string {
   return epoch
 }
 /** Standard token-plan source only. Stale OAuth must not authorize BYOK/custom routes. */
-async function configuration(root: string, signal: AbortSignal): Promise<{ fingerprint: string; epoch: string }> {
+async function configuration(root: string, signal: AbortSignal, expected?: { digest: string; region: 'cn' | 'en' }): Promise<{ fingerprint: string; epoch: string }> {
   let config: NativeDocument | undefined
-  try { config = await document(join(root, 'config.yaml'), signal, true, true) }
+  try {
+    config = await document(join(root, 'config.yaml'), signal, true, true,
+      expected ? bytes => assertMiniMaxAccountSettings(expected.digest, bytes, expected.region) : undefined)
+    if (expected && !config) throw new MiniMaxAccountError('MiniMax 私有账号原签名设置已失效')
+  }
   catch (error) { lastConfigurations.delete(root); throw error }
   // Observe safe reads even if their route is unsupported, so a later restored A cannot hide an observed B.
   const epoch = configurationVersion(root, config), value = config?.value ?? {}
@@ -103,12 +110,17 @@ async function configuration(root: string, signal: AbortSignal): Promise<{ finge
   // Stable binding uses the complete raw contents; operation-local versions are kept privately above.
   return { fingerprint: config?.fingerprint ?? 'native-default-token-plan', epoch }
 }
-export async function minimaxSource(config: Pick<RuntimeConfig, 'minimaxHome'>, signal: AbortSignal): Promise<MiniMaxSource> {
+export async function minimaxSource(config: Pick<RuntimeConfig, 'minimaxHome' | 'minimaxRegion' | 'minimaxExpectedConfigDigest'>, signal: AbortSignal): Promise<MiniMaxSource> {
   assertMiniMaxIdentityActive(signal)
   assertMiniMaxRoute()
+  const fixedRegion = config.minimaxRegion, expected = config.minimaxExpectedConfigDigest
+  if (expected !== undefined && (typeof expected !== 'string' || !/^[0-9a-f]{64}$/.test(expected) || !config.minimaxHome || !fixedRegion || process.env.MAVIS_BUILTIN_AGENTS_V2_DIR))
+    throw new MiniMaxAccountError('MiniMax 私有账号原签名设置需要完整固定来源')
+  if (fixedRegion !== undefined && (!config.minimaxHome || !['cn', 'en'].includes(fixedRegion)))
+    throw new MiniMaxAccountError('MiniMax Code 固定区域需要明确的私有根与受支持区域')
   const root = minimaxDataRoot(config)
-  let region = process.env.MAVIS_REGION?.trim() || undefined
-  let selection = digest(JSON.stringify({ origin: 'env', region }))
+  let region = fixedRegion ?? (process.env.MAVIS_REGION?.trim() || undefined)
+  let selection = digest(JSON.stringify({ origin: fixedRegion === undefined ? 'env' : 'fixed-private-region', region }))
   if (!region) {
     const preferences = await document(join(root, 'preferences/mcode-region.json'), signal, false)
     selection = digest(JSON.stringify({ origin: 'preferences', stamp: preferences?.stamp, fingerprint: preferences?.fingerprint }))
@@ -127,9 +139,10 @@ export async function minimaxSource(config: Pick<RuntimeConfig, 'minimaxHome'>, 
       region = existing[0] ?? 'cn'
     }
   }
-  const currentConfiguration = await configuration(root, signal)
+  const currentConfiguration = await configuration(root, signal, expected === undefined ? undefined : { digest: expected, region: fixedRegion! })
   assertMiniMaxIdentityActive(signal)
   const source: MiniMaxSource = { root, region: region as 'cn' | 'en', selection, configuration: currentConfiguration.fingerprint, env: { MINIMAX_DATA_DIR: root, MAVIS_DATA_DIR: root, MAVIS_REGION: region!, MAVIS_BUILD_ENV: 'prod' } }
+  if (expected !== undefined) assertMiniMaxProfileProtection({ root, region: fixedRegion!, configDigest: expected, version: '0.6.12' }, source.env)
   sourceConfigurationEpochs.set(source, currentConfiguration.epoch)
   return source
 }
@@ -166,7 +179,7 @@ export function miniMaxAccountSnapshotDifference(before: MiniMaxAccountProjectio
 /** Never leaves this module or enters a Gateway response, process payload or persisted record. */
 interface OwnOAuthProof { sourceKey: string; epoch: string; accessToken: string; expiresAtMs: number }
 interface PrivateAccount { account: MiniMaxAccountProjection; proof?: OwnOAuthProof }
-async function readOwnMiniMaxAccount(config: Pick<RuntimeConfig, 'minimaxHome'>, signal: AbortSignal): Promise<PrivateAccount> {
+async function readOwnMiniMaxAccount(config: Pick<RuntimeConfig, 'minimaxHome' | 'minimaxRegion' | 'minimaxExpectedConfigDigest'>, signal: AbortSignal): Promise<PrivateAccount> {
   const source = await minimaxSource(config, signal), directory = join(source.root, `auth/prod/${source.region}/mcode-public`)
   const statePath = join(directory, 'auth-state.json'), authPath = join(directory, 'auth.json')
   const before = await document(statePath, signal)
@@ -210,7 +223,7 @@ async function readOwnMiniMaxAccount(config: Pick<RuntimeConfig, 'minimaxHome'>,
   return { proof, account }
 }
 /** Ordinary account summaries remain strictly local, even when userinfo is absent. */
-export async function readMiniMaxAccount(config: Pick<RuntimeConfig, 'minimaxHome'>, signal: AbortSignal): Promise<MiniMaxAccountProjection> {
+export async function readMiniMaxAccount(config: Pick<RuntimeConfig, 'minimaxHome' | 'minimaxRegion' | 'minimaxExpectedConfigDigest'>, signal: AbortSignal): Promise<MiniMaxAccountProjection> {
   try {
     assertMiniMaxIdentityActive(signal)
     const value = await readOwnMiniMaxAccount(config, signal)
@@ -243,7 +256,7 @@ async function resolveMiniMaxIdentity(proof: OwnOAuthProof, region: 'cn' | 'en',
   finally { if (--entry.waiters === 0 && !entry.settled) entry.controller.abort() }
 }
 /** Only formal binding/catalog admission may perform the bounded identity metadata request. */
-export async function ensureMiniMaxVerifiedAccount(config: Pick<RuntimeConfig, 'minimaxHome'>, signal: AbortSignal, options: MiniMaxIdentityOptions = {}): Promise<MiniMaxAccountProjection> {
+export async function ensureMiniMaxVerifiedAccount(config: Pick<RuntimeConfig, 'minimaxHome' | 'minimaxRegion' | 'minimaxExpectedConfigDigest'>, signal: AbortSignal, options: MiniMaxIdentityOptions = {}): Promise<MiniMaxAccountProjection> {
   try {
     assertMiniMaxIdentityActive(signal)
     const account = await verifyMiniMaxAccount(config, signal, options)
@@ -251,11 +264,13 @@ export async function ensureMiniMaxVerifiedAccount(config: Pick<RuntimeConfig, '
     return account
   } catch (error) { assertMiniMaxIdentityActive(signal); throw error }
 }
-async function verifyMiniMaxAccount(config: Pick<RuntimeConfig, 'minimaxHome'>, signal: AbortSignal, options: MiniMaxIdentityOptions): Promise<MiniMaxAccountProjection> {
+async function verifyMiniMaxAccount(config: Pick<RuntimeConfig, 'minimaxHome' | 'minimaxRegion' | 'minimaxExpectedConfigDigest'>, signal: AbortSignal, options: MiniMaxIdentityOptions): Promise<MiniMaxAccountProjection> {
   const before = await readOwnMiniMaxAccount(config, signal)
   if (!before.proof) return before.account
   const proof = before.proof
   try {
+    if (config.minimaxExpectedConfigDigest !== undefined) assertMiniMaxProfileProtection({ root: before.account.source.root,
+      region: before.account.source.region, configDigest: config.minimaxExpectedConfigDigest, version: '0.6.12' }, before.account.source.env)
     if (before.account.principal) return before.account
     let principal: string | undefined, issue: MiniMaxIdentityError | undefined
     try { principal = await resolveMiniMaxIdentity(proof, before.account.source.region, signal, options) }
@@ -280,7 +295,7 @@ async function verifyMiniMaxAccount(config: Pick<RuntimeConfig, 'minimaxHome'>, 
     } finally { if (after.proof) after.proof.accessToken = '' }
   } finally { proof.accessToken = '' }
 }
-export async function readMiniMaxBindingMaterial(config: Pick<RuntimeConfig, 'minimaxHome'>, signal: AbortSignal) {
+export async function readMiniMaxBindingMaterial(config: Pick<RuntimeConfig, 'minimaxHome' | 'minimaxRegion' | 'minimaxExpectedConfigDigest'>, signal: AbortSignal) {
   assertMiniMaxIdentityActive(signal)
   const account = await ensureMiniMaxVerifiedAccount(config, signal)
   assertMiniMaxIdentityActive(signal)

@@ -2003,7 +2003,7 @@ it.each(CLI_IDS)('keeps %s advanced settings folded separately from project mode
   expect(visibleText(arrows[0]!).trim()).toBe('')
   expect(arrows[0]!.props['aria-expanded']).toBe(false)
   expect(project.findAllByProps({ 'aria-label': '高级设置' })).toHaveLength(0)
-  expect(t.r.root.findAllByProps({ className: 'cwn-cli-path-settings' })).toHaveLength(0)
+  expect(advanced.findAllByProps({ className: 'cwn-cli-path-settings' })).toHaveLength(0)
   expect(t.cliExecutablePath).not.toHaveBeenCalled()
   await t.click('高级设置')
   expect(t.button('高级设置').props['aria-expanded']).toBe(true)

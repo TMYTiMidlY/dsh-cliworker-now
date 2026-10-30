@@ -11,6 +11,7 @@ import { minimaxAcpArgv, runNativeMiniMax } from '../src/host/native-minimax.mjs
 import { resolveCliName } from '../src/host/routing.ts'
 import { catalogFor, executableFor, workerArguments } from '../src/host/adapters.ts'
 import { transportFor } from '../src/host/native-worker.ts'
+import { projectMiniMaxAccountSettings } from '../src/host/native-auth-minimax-settings.ts'
 import { nativeAttachmentCapability } from '../src/host/native-attachments.mjs'
 import { nativeHarnessToolCapability } from '../src/host/native-harness-injection.mjs'
 import { bridgedFeatureSupport } from '../src/shared/conversation-features.ts'
@@ -84,7 +85,7 @@ function backendFixture(scenario = 'success', action?: () => void) {
             action?.(); stdout.write(JSON.stringify({ jsonrpc: '2.0', id: q.id, error: { code: -32603, message: 'PRIVATE_NATIVE_ERROR', data: { details: 'Invalid model reasoning', token: 'PRIVATE_TOKEN' } } }) + '\n'); return
           }
           let result: any
-          if (q.method === 'initialize') result = { protocolVersion: scenario === 'version' ? 2 : 1, agentInfo: { name: scenario === 'wrong-agent' ? 'other-agent' : 'minimax-code' }, agentCapabilities: { loadSession: true } }
+          if (q.method === 'initialize') result = { protocolVersion: scenario === 'version' ? 2 : 1, agentInfo: { name: scenario === 'wrong-agent' ? 'other-agent' : 'minimax-code', version: scenario === 'wrong-version' ? '9.9.9' : '0.6.12' }, agentCapabilities: { loadSession: true } }
           else {
             if (q.method === 'session/set_config_option') {
               data.configOptions.find((v: any) => v.id === q.params.configId).currentValue = q.params.value
@@ -119,6 +120,84 @@ describe('MiniMax independent routing and own account (synthetic)', () => {
     vi.stubEnv('MAVIS_REGION', '  '); expect(() => assertMiniMaxRoute()).not.toThrow()
     expect(() => minimaxDataRoot({ minimaxHome: 'relative' })).toThrow()
     const f = fixture({ region: 'en' }); expect((await minimaxSource(f.config, signal())).region).toBe('en')
+  })
+  it('uses a fixed private region instead of Host env or native preferences', async () => {
+    const f = fixture(); mkdirSync(join(f.root, 'preferences'), { mode: 0o700 })
+    f.write(join(f.root, 'preferences/mcode-region.json'), { version: 1, regions: { prod: 'en' } })
+    vi.stubEnv('MAVIS_REGION', 'en')
+    const source = await minimaxSource({ ...f.config, minimaxRegion: 'cn' } as any, signal())
+    expect(source.region).toBe('cn')
+    expect(source.env).toEqual({ MINIMAX_DATA_DIR: f.root, MAVIS_DATA_DIR: f.root, MAVIS_REGION: 'cn', MAVIS_BUILD_ENV: 'prod' })
+    expect(process.env.MAVIS_REGION).toBe('en')
+  })
+  it('does not fall back to an existing other-region account when the fixed region is missing', async () => {
+    const f = fixture()
+    const account = await readMiniMaxAccount({ ...f.config, minimaxRegion: 'en' } as any, signal())
+    expect(account.source.region).toBe('en'); expect(account.identity.state).toBe('unconfigured')
+    expect(account.principal).toBeUndefined()
+  })
+  it('rejects a private region without a fixed root or with an unknown value', async () => {
+    const nativeDefault = fixture(); vi.stubEnv('MINIMAX_DATA_DIR', nativeDefault.root)
+    await expect(minimaxSource({ minimaxRegion: 'cn' } as any, signal())).rejects.toThrow('固定')
+    const f = fixture()
+    await expect(minimaxSource({ ...f.config, minimaxRegion: 'other' } as any, signal())).rejects.not.toThrow('other')
+  })
+  it('passes the same fixed private root and region through actual metadata preparation', async () => {
+    const f = fixture({ subject: false }), b = backendFixture()
+    vi.stubEnv('MAVIS_REGION', 'en')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ data: { userInfo: { realUserID: 'synthetic-fixed-profile' } } }))))
+    expect((await discoverMiniMaxModels(b.backend, { ...f.config, minimaxRegion: 'cn' } as any, config.minimaxExecutable, '/project', signal())).models).toHaveLength(2)
+    expect(b.calls).toHaveLength(1); expect(b.calls[0].env.MAVIS_REGION).toBe('cn')
+    expect(b.calls[0].env.MINIMAX_DATA_DIR).toBe(f.root); expect(process.env.MAVIS_REGION).toBe('en')
+  })
+  it('accepts only the original private settings digest on the fixed root and region', async () => {
+    const f = fixture(), settings = projectMiniMaxAccountSettings(undefined, 'cn')
+    writeFileSync(join(f.root, 'config.yaml'), settings.bytes, { mode: 0o600 })
+    const scoped = { ...f.config, minimaxRegion: 'cn', minimaxExpectedConfigDigest: settings.digest } as any
+    expect((await minimaxSource(scoped, signal())).root).toBe(f.root)
+  })
+  it.each(['permission', 'privacy'])('rejects private %s drift before metadata/UID without weakening legacy route behavior', async kind => {
+    const f = fixture({ subject: false }), settings = projectMiniMaxAccountSettings(undefined, 'cn'), value = JSON.parse(Buffer.from(settings.bytes).toString())
+    if (kind === 'permission') value.permissionMode = 'bypassPermissions'; else value.dataContribution.enabled = false
+    f.write(join(f.root, 'config.yaml'), value)
+    const scoped = { ...f.config, minimaxRegion: 'cn', minimaxExpectedConfigDigest: settings.digest } as any, b = backendFixture(), fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    await expect(discoverMiniMaxModels(b.backend, scoped, config.minimaxExecutable, '/project', signal())).rejects.toThrow()
+    expect(b.calls).toEqual([]); expect(fetch).not.toHaveBeenCalled()
+    expect((await minimaxSource(f.config, signal())).root).toBe(f.root)
+  })
+  it('rejects a private digest without complete fixed context before any default-source access', async () => {
+    const f = fixture(); vi.stubEnv('MINIMAX_DATA_DIR', f.root)
+    await expect(minimaxSource({ minimaxExpectedConfigDigest: 'a'.repeat(64) } as any, signal())).rejects.toThrow()
+    await expect(minimaxSource({ ...f.config, minimaxRegion: 'cn', minimaxExpectedConfigDigest: 'bad' } as any, signal())).rejects.toThrow()
+  })
+  it('rechecks imported settings immediately before low-level metadata spawn', async () => {
+    const f = fixture(), settings = projectMiniMaxAccountSettings(undefined, 'cn')
+    writeFileSync(join(f.root, 'config.yaml'), settings.bytes, { mode: 0o600 })
+    const scoped = { ...f.config, minimaxRegion: 'cn', minimaxExpectedConfigDigest: settings.digest } as any
+    const prepared = await minimaxSource(scoped, signal()), b = backendFixture()
+    f.write(join(f.root, 'config.yaml'), { ...JSON.parse(Buffer.from(settings.bytes).toString()), memory: { enabled: true } })
+    await expect(queryMiniMaxAcpModels(b.backend, scoped, config.minimaxExecutable, '/project', prepared, signal())).rejects.toThrow()
+    expect(b.calls).toEqual([])
+  })
+  it.each(['permission.json', 'plugin-hook-permissions'])('rejects a new global protection %s before ordinary imported UID or metadata', async name => {
+    const f = fixture({ subject: false }), settings = projectMiniMaxAccountSettings(undefined, 'cn')
+    writeFileSync(join(f.root, 'config.yaml'), settings.bytes, { mode: 0o600 })
+    const scoped = { ...f.config, minimaxRegion: 'cn', minimaxExpectedConfigDigest: settings.digest } as any
+    await minimaxSource(scoped, signal())
+    if (name === 'permission.json') f.write(join(f.root, name), {}); else mkdirSync(join(f.root, name), { mode: 0o700 })
+    const b = backendFixture(), fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
+    await expect(discoverMiniMaxModels(b.backend, scoped, config.minimaxExecutable, '/project', signal())).rejects.toThrow()
+    expect(fetch).not.toHaveBeenCalled(); expect(b.calls).toEqual([])
+  })
+  it.each(['MINIMAX_DATA_DIR', 'MAVIS_DATA_DIR', 'MAVIS_REGION', 'MAVIS_BUILD_ENV'])('uses fresh private environment instead of mutated prepared %s', async key => {
+    const f = fixture(), settings = projectMiniMaxAccountSettings(undefined, 'cn')
+    writeFileSync(join(f.root, 'config.yaml'), settings.bytes, { mode: 0o600 })
+    const scoped = { ...f.config, minimaxRegion: 'cn', minimaxExpectedConfigDigest: settings.digest } as any
+    const prepared = await minimaxSource(scoped, signal()), b = backendFixture()
+    prepared.env[key] = 'SYNTHETIC_WRONG_ENV'
+    expect((await queryMiniMaxAcpModels(b.backend, scoped, config.minimaxExecutable, '/project', prepared, signal())).models).toHaveLength(2)
+    expect(b.calls[0].env).toMatchObject({ MINIMAX_DATA_DIR: f.root, MAVIS_DATA_DIR: f.root, MAVIS_REGION: 'cn', MAVIS_BUILD_ENV: 'prod' })
   })
   it('resolves only native region preference and rejects competing account namespaces', async () => {
     const f = fixture(); mkdirSync(join(f.root, 'auth/prod/en/mcode-public'), { recursive: true, mode: 0o700 })
@@ -305,6 +384,15 @@ describe('MiniMax state and zero prompt metadata', () => {
     expect(models).toMatchObject([{ id: modelA, efforts: ['default', 'low', 'high'] }, { id: modelB, efforts: ['default', 'max'] }])
     expect(f.frames.map(q => q.method)).toEqual(['initialize', 'session/new', 'session/set_config_option'])
     expect(f.frames[1].params).toEqual({ cwd: '/project', mcpServers: [] }); expect(f.exits()).toBe(1)
+  })
+  it('rejects a private profile Native version mismatch before opening a session', async () => {
+    const f = backendFixture('wrong-version')
+    await expect((queryMiniMaxAcpModels as any)(f.backend, config, config.minimaxExecutable, '/project', { root: '/synthetic', region: 'cn', env: {} }, signal(), '0.6.12')).rejects.toThrow('init_contract')
+    expect(f.frames.map(q => q.method)).toEqual(['initialize']); expect(f.exits()).toBe(1)
+  })
+  it('accepts the fixed private profile version without altering legacy metadata checks', async () => {
+    const f = backendFixture()
+    expect((await (queryMiniMaxAcpModels as any)(f.backend, config, config.minimaxExecutable, '/project', { root: '/synthetic', region: 'cn', env: {} }, signal(), '0.6.12')).models).toHaveLength(2)
   })
   it('roundtrips native empty variants and excludes custom provider models', async () => {
     for (const scenario of ['empty-variant', 'custom-model']) {

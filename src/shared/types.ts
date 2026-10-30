@@ -86,6 +86,8 @@ export type WorkerStatus =
   | 'uncertain'
 export type TaskMode = 'plan' | 'accept-edits'
 export interface Preference {
+  /** Explicit imported source/version; absent retains legacy native behavior. */
+  authProfile?: import('./auth-profiles.ts').AuthProfilePin
   /** Missing in v0.1.x data means Antigravity. */
   cli?: CliId
   model: string

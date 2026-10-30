@@ -6,7 +6,12 @@ import type { TaskMode } from '../shared/types.ts'
 
 export type Snapshot = WorkerSnapshot & { configuring?: boolean }
 export type API = Pick<ClientRemote, '$stream'> & {
-  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'readConcurrency' | 'configureConcurrency'> & {
+  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'readConcurrency' | 'configureConcurrency' | 'authTaskSettings' | 'authTaskCatalog' | 'authTaskApply' | 'authImport' | 'authManage'> & {
+    authTaskSettings?: (parentId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    authTaskCatalog?: (parentId: string, source: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    authTaskApply?: (parentId: string, request: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    authImport?: (parentId: string, request: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    authManage?: (parentId: string, request: string, signal: AbortSignal) => Promise<RemoteResult<string>>
     readConcurrency?: (parentId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
     configureConcurrency?: (parentId: string, limit: number, signal: AbortSignal) => Promise<RemoteResult<string>>
     /** Optional until an older Host has upgraded its native-conversation bridge. */

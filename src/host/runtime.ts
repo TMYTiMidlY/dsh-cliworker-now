@@ -1,3 +1,6 @@
+import { openNativeProfileScope, profileSelection, type NativeProfileAccess, type NativeProfileExecutionScope } from './native-auth-profile-scope.ts'
+import { NativeAuthError, isNativeAuthCleanupUnconfirmedError } from './native-auth-files.ts'
+import { assertMiniMaxProfileProtection } from './minimax-profile-protection.mjs'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { HarnessConversationApi } from './harness-conversation-types.ts'
 import { forkWorkerConversation, readWorkerForkState, writeWorkerForkState, type NativeForkCut, type ForkHistory, type WorkerForkState } from './worker-fork.ts'
@@ -249,6 +252,7 @@ export class WorkerRuntime {
     readonly storage: WorkerStorage,
     private backend: ProcessBackend,
     readonly config: RuntimeConfig,
+    private readonly nativeProfiles?: NativeProfileAccess,
   ) {
     const initialLimit = concurrencyLimitSchema.parse(config.maxConcurrent)
     try {
@@ -1543,6 +1547,7 @@ export class WorkerRuntime {
     if (this.followups.list(id).length)
       throw new Error('请先发送或取消待发送消息（包含已暂停消息），再修改模型与强度')
     if (cliOf(worker.preference) !== cliOf(preference)) throw new Error('已有会话不能切换 CLI')
+    if (JSON.stringify(profileSelection(worker.preference)) !== JSON.stringify(profileSelection(preference))) throw new Error('已有会话不能切换账号档案或材料版本')
     if (worker.transport === 'opencode-http-v2' && (preference.model !== worker.preference.model || preference.effort !== worker.preference.effort)) throw new Error('OpenCode v2 自有纯文本会话固定模型与强度，修改请新建任务')
     if (worker.harnessConversation?.capabilities.model === false && preference.model !== worker.preference.model)
       throw new Error('当前会话通路不支持修改模型，请新建任务')
@@ -1551,7 +1556,8 @@ export class WorkerRuntime {
   }
   configureWorker(parent: string, id: string, preference: Preference, preparationId?: string): Worker {
     const worker = this.assertWorkerModelConfigurable(parent, id, preference, preparationId)
-    const updated = { ...worker, preference: { ...preference } }
+    const fixedProfile = profileSelection(worker.preference)
+    const updated = { ...worker, preference: { ...preference, ...(fixedProfile ? { authProfile: fixedProfile } : {}) } }
     if (worker.preference.model !== preference.model) {
       updated.contextInvalidatedRunId = worker.runId
       updated.contextTelemetry = undefined
@@ -1625,6 +1631,8 @@ export class WorkerRuntime {
     }
     if (previous) usesNativeBridge(previous)
     const effective = previous?.preference ?? preference
+    const selectedProfile = profileSelection(effective)
+    if (selectedProfile && !this.nativeProfiles) throw new NativeAuthError('UNSUPPORTED')
     this.assertCliEnabled(cliOf(effective))
     if (
       previous &&
@@ -1699,7 +1707,7 @@ export class WorkerRuntime {
         : availableAgentName(this.storage.workers.values(), parent, CLI_SHORT_NAMES[cliOf(preference)]),
       agentNameOrigin: identity?.agentName ? 'custom' : 'auto',
       role: identity?.role ? roleSnapshotSchema.parse(structuredClone(identity.role)) : undefined,
-      preference: { ...preference },
+      preference: { ...preference, ...(selectedProfile ? { authProfile: selectedProfile } : {}) },
       transport: this.initialTransport(cliOf(preference)),
       mode,
       createdAt: now,
@@ -1750,7 +1758,7 @@ export class WorkerRuntime {
     // Start the own-account read at admission, before this task waits in the queue.
     const admission = authorizedBinding
       ? Promise.resolve(authorizedBinding)
-      : readCliAccountBinding(cliOf(effective), this.backend, agyConfigForPreference(this.config, effective), canonical, controller.signal)
+      : this.preferenceBinding(worker.preference, canonical, controller.signal)
     // Freeze the goal when this turn is admitted, so edits during preparation
     // or execution affect only later turns. Every CLI shares this prompt.
     const forkSource = readWorkerForkState(this.storage.directory, worker.id)?.sourceConversationId
@@ -1780,9 +1788,9 @@ export class WorkerRuntime {
     }
     void admission.catch((error) => {
       if (!controller.signal.aborted) task.admissionFailure = { error }
-      if (error instanceof ProcessCleanupUnconfirmedError) {
-        task.admissionFailure ??= { error }
-        this.blockCatalogOnCleanup(cliOf(worker.preference), error)
+      if (error instanceof ProcessCleanupUnconfirmedError || isNativeAuthCleanupUnconfirmedError(error)) {
+        task.admissionFailure ??= { error }; task.cleanupState = 'unconfirmed'
+        this.blockCatalogOnCleanup(cliOf(worker.preference), error instanceof ProcessCleanupUnconfirmedError ? error : new ProcessCleanupUnconfirmedError())
       }
     })
     if (task.priority) {
@@ -1924,9 +1932,9 @@ export class WorkerRuntime {
     try {
       await task.admission
     } catch (error) {
-      if (error instanceof ProcessCleanupUnconfirmedError) {
-        task.admissionFailure ??= { error }
-        this.blockCatalogOnCleanup(cliOf(task.worker.preference), error)
+      if (error instanceof ProcessCleanupUnconfirmedError || isNativeAuthCleanupUnconfirmedError(error)) {
+        task.admissionFailure ??= { error }; task.cleanupState = 'unconfirmed'
+        this.blockCatalogOnCleanup(cliOf(task.worker.preference), error instanceof ProcessCleanupUnconfirmedError ? error : new ProcessCleanupUnconfirmedError())
       }
     }
     const priorFailure = task.admissionFailure
@@ -2046,6 +2054,19 @@ export class WorkerRuntime {
       if (worker.status === 'completed') this.dispatchFollowup(worker)
     }
   }
+  private preferenceBinding(preference: Preference, project: string, signal: AbortSignal): Promise<string> {
+    const pin = profileSelection(preference)
+    // Return the plain binding read's promise DIRECTLY for the non-profile
+    // path: an extra async adoption layer delays rejection propagation, which
+    // would make a pre-stop account failure settle after the stop's abort and
+    // get mislabelled as a user interrupt in queued finish classification.
+    if (!pin) return readCliAccountBinding(cliOf(preference), this.backend, agyConfigForPreference(this.config, preference), project, signal)
+    return (async () => {
+      if (!this.nativeProfiles) throw new NativeAuthError('UNSUPPORTED')
+      const executable = await resolveCliExecutable('minimax', this.backend, this.config, signal)
+      return this.nativeProfiles.run(pin, executable, operation => readCliAccountBinding('minimax', this.backend, operation.config, project, operation.signal), signal)
+    })()
+  }
   private async run(task: Task): Promise<void> {
     const { worker, controller } = task
     let handle: SubprocessHandle | undefined
@@ -2101,7 +2122,12 @@ export class WorkerRuntime {
     let release: (() => void | Promise<void>) | undefined
     let quiescent = false
     let metadataReady = false
+    let profileScope: NativeProfileExecutionScope | undefined, profileCleanup: unknown
+    let profileClosed = false, ownedCleanupComplete = false
+    let unlinkProfileAbort: (() => void) | undefined
+    let scopedConfig = agyConfigForPreference(this.config, worker.preference)
     const phase = (value: PreparationPhase) => { task.phase = value; this.changed() }
+    try {
     try {
       phase('remote-recovery')
       await this.remoteOpenCodeRecovery
@@ -2117,11 +2143,21 @@ export class WorkerRuntime {
       const previousBinding = this.storage.accountBinding(worker.id)
       if (previousBinding && previousBinding !== admitted) throw new Error(ACCOUNT_CHANGED)
       phase('authorization')
-       const scopedConfig = agyConfigForPreference(this.config, worker.preference)
+      const profile = profileSelection(worker.preference)
+      if (profile) {
+        if (!this.nativeProfiles) throw new NativeAuthError('UNSUPPORTED')
+        const program = await resolveCliExecutable('minimax', this.backend, this.config, controller.signal)
+        profileScope = await openNativeProfileScope(this.nativeProfiles, profile, program, controller.signal)
+        scopedConfig = profileScope.config
+        const abort = () => { if (!controller.signal.aborted) controller.abort(profileScope!.signal.reason) }
+        profileScope.signal.addEventListener('abort', abort, { once: true })
+        unlinkProfileAbort = () => profileScope!.signal.removeEventListener('abort', abort)
+        if (profileScope.signal.aborted) abort()
+      }
       const { binding, catalog: authorizedCatalog, preference: authorizedPreference } = await authorizeSelection(
         worker.preference,
         this.backend,
-        this.config,
+        scopedConfig,
         worker.project,
         controller.signal,
         admitted,
@@ -2153,7 +2189,7 @@ export class WorkerRuntime {
       controller.signal.throwIfAborted()
       task.hostWait = undefined
       timeout = setTimeout(() => controller.abort(new Error('任务超时')), this.config.timeoutMs)
-      const executionConfig = { ...this.config,
+      const executionConfig = { ...scopedConfig,
         ...(task.attachments?.length ? { attachments: task.attachments } : {}),
         ...(harnessLease?.connection ? { harnessTools: harnessLease.connection } : {}),
       }
@@ -2292,7 +2328,7 @@ export class WorkerRuntime {
         (await readCliAccountBinding(
           cliOf(worker.preference),
           this.backend,
-          agyConfigForPreference(this.config, worker.preference),
+          scopedConfig,
           worker.project,
           controller.signal,
         ))
@@ -2318,6 +2354,8 @@ export class WorkerRuntime {
         // No await separates this ownership check from the native spawn attempt.
         message.spawnAttempted = true
       }
+      if (profileScope) assertMiniMaxProfileProtection({ root: scopedConfig.minimaxHome!, region: scopedConfig.minimaxRegion!,
+        configDigest: scopedConfig.minimaxExpectedConfigDigest!, version: '0.6.12' }, 'env' in execution ? execution.env : undefined)
       task.spawnAttempted = true
       handle = await spawnManagedAgent(this.backend, {
         argv: execution.argv,
@@ -2404,6 +2442,7 @@ export class WorkerRuntime {
       if (error instanceof HostChildCapacityDeferred && !controller.signal.aborted && !this.disposed &&
         !task.spawnAttempted && !handle && !harnessLease && !release && this.tasks.get(worker.id) === task) deferred = error
       else {
+        if (error instanceof ProcessCleanupUnconfirmedError || isNativeAuthCleanupUnconfirmedError(error)) profileCleanup ??= error
         failure = error
         failureBeforeStop =
           !!task.admissionFailure ||
@@ -2412,9 +2451,10 @@ export class WorkerRuntime {
               task.nativeStopRequested &&
               (error instanceof UserStoppedError || String(error).includes('任务已停止'))
             ))
-        if (error instanceof ProcessCleanupUnconfirmedError) {
-          if (!metadataReady) this.blockCatalogOnCleanup(cliOf(worker.preference), error)
-          else this.markCleanupBlocked(error)
+        if (error instanceof ProcessCleanupUnconfirmedError || isNativeAuthCleanupUnconfirmedError(error)) {
+          const witness = error instanceof ProcessCleanupUnconfirmedError ? error : new ProcessCleanupUnconfirmedError()
+          if (!metadataReady) this.blockCatalogOnCleanup(cliOf(worker.preference), witness)
+          else this.markCleanupBlocked(witness)
         }
       }
     } finally {
@@ -2425,15 +2465,19 @@ export class WorkerRuntime {
         task.nativeStop = undefined
         task.steeringController.abort(new Error('当前运行已结束，引导通路已关闭'))
         if (handle) {
-          handle.terminate()
           try {
+            handle.terminate()
             if (!(await handle.waitForExit())) throw new Error('CLI cleanup did not reach quiescence')
             quiescent = true
           } catch (error) {
+            if (profileScope) profileCleanup ??= new ProcessCleanupUnconfirmedError()
             failure = error
             this.markCleanupBlocked(error)
           }
-          await Promise.allSettled([...readers, handle.done])
+          // A false/throwing owned-range barrier is already uncertainty, not a
+          // reason to hang forever on its still-open readers and done promise.
+          // Their rejection observers remain installed; profile stays quarantined.
+          if (!profileScope || quiescent) await Promise.allSettled([...readers, handle.done])
         }
         if (remoteSettlement) {
           try { await remoteSettlement() }
@@ -2452,7 +2496,13 @@ export class WorkerRuntime {
         else if (protocol.result) worker.lastResult = protocol.result.response
       }
     }
-    if (deferred) { this.deferHostAdmission(task, deferred, hostEpoch); return }
+    if (deferred) {
+      try { await profileScope?.close() }
+      catch (error) { failure = error; deferred = undefined; releaseFailed = true
+        if (error instanceof ProcessCleanupUnconfirmedError || isNativeAuthCleanupUnconfirmedError(error)) { profileCleanup ??= error; this.markCleanupBlocked(new ProcessCleanupUnconfirmedError()) } }
+      finally { profileClosed = true; unlinkProfileAbort?.() }
+      if (deferred) { this.deferHostAdmission(task, deferred, hostEpoch); return }
+    }
     await Promise.allSettled([...task.steering.values()].map((entry) => entry.done))
     try {
       await harnessLease?.close()
@@ -2467,12 +2517,58 @@ export class WorkerRuntime {
       releaseFailed = true
       if (error instanceof ProcessCleanupUnconfirmedError) this.markCleanupBlocked(error)
     }
+    ownedCleanupComplete = true
+    if (profileScope) {
+      if (releaseFailed) profileCleanup ??= new ProcessCleanupUnconfirmedError()
+      if (handle && quiescent && !profileCleanup) {
+        try {
+          // Local-only postcondition after actual owned cleanup; cancellation
+          // must not skip it, and it must not start another Native/UID request.
+          assertMiniMaxProfileProtection({ root: scopedConfig.minimaxHome!, region: scopedConfig.minimaxRegion!,
+            configDigest: scopedConfig.minimaxExpectedConfigDigest!, version: '0.6.12' })
+        } catch {
+          const warning = '任务已执行，但当前账号档案保护后验不符；保留实际正文及清理证据，后续新操作未准入'
+          if (protocol.result?.status === 'SUCCESS' && !failure) summaryConflict = warning
+          else this.storage.append(worker, { kind: 'diagnostic', text: warning })
+        }
+      }
+      try { await profileScope.close(profileCleanup) }
+      catch (error) {
+        if (error instanceof ProcessCleanupUnconfirmedError || isNativeAuthCleanupUnconfirmedError(error)) {
+          profileCleanup ??= error; failure = error; this.markCleanupBlocked(new ProcessCleanupUnconfirmedError())
+        } else if (protocol.result?.status === 'SUCCESS' && !failure) summaryConflict = '任务已执行，但私有账号作用域收尾失败；保留实际正文及原生清理证据'
+        else failure ??= error
+      } finally { profileClosed = true; unlinkProfileAbort?.() }
+    }
     if (stderr.trim())
       this.storage.append(worker, {
         kind: 'diagnostic',
         text: 'CLI 诊断',
         detail: stderr,
       })
+    } finally {
+      // Persistence/listener failures after admission must not bypass the
+      // owning callback's end gate. Unknown actual cleanup is quarantined;
+      // a diagnostic EIO after confirmed Native cleanup is not invented CCU.
+      if (profileScope && !profileClosed) {
+        if (!ownedCleanupComplete) profileCleanup ??= new ProcessCleanupUnconfirmedError()
+        try { await profileScope.close(profileCleanup) }
+        catch (error) {
+          failure ??= error
+          if (error instanceof ProcessCleanupUnconfirmedError || isNativeAuthCleanupUnconfirmedError(error)) {
+            profileCleanup ??= error; this.markCleanupBlocked(new ProcessCleanupUnconfirmedError())
+          }
+        } finally {
+          profileClosed = true; unlinkProfileAbort?.()
+        }
+      }
+      if (worker.preference.authProfile) {
+        task.cleanupState = ownedCleanupComplete && (!handle || quiescent) && !profileCleanup && !releaseFailed && !this.blocked && !this.catalogBlocked.has(cliOf(worker.preference)) ? 'confirmed' : 'unconfirmed'
+        // An already-closed scope does not erase this run's constructor-owned
+        // cleanup debt when a later diagnostic/persistence step also fails.
+        if (profileCleanup) throw profileCleanup
+      }
+    }
     let status: Worker['status'] = 'completed'
     let error: string | undefined
     let interruptionReason: Worker['interruptionReason']
@@ -2497,7 +2593,7 @@ export class WorkerRuntime {
       status = 'failed'
       error = String(failure)
     }
-    task.cleanupState = (!handle || quiescent) && !this.blocked && !remoteUncertain && !releaseFailed && !this.catalogBlocked.has(cliOf(worker.preference)) ? 'confirmed' : 'unconfirmed'
+    task.cleanupState = (!handle || quiescent) && !profileCleanup && !this.blocked && !remoteUncertain && !releaseFailed && !this.catalogBlocked.has(cliOf(worker.preference)) ? 'confirmed' : 'unconfirmed'
     this.finish(task, status, error, interruptionReason)
   }
 

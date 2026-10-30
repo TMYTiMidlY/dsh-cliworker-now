@@ -3,6 +3,8 @@ import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { CliId, Preference, TaskMode, Worker } from '../shared/types.ts'
 import type { RuntimeConfig } from './process.ts'
+import { profileSelection } from './native-auth-profile-scope.ts'
+import { assertMiniMaxProfileProtection, type MiniMaxProfileProtection } from './minimax-profile-protection.mjs'
 import { windowsCodexBackgroundLaunch } from './windows-codex-launch.ts'
 import { nativeLaunchArgv } from './native-launch.mjs'
 import { createNativeStopControl, createNativeGuidanceControl } from './pi-omp-control.mjs'
@@ -66,6 +68,13 @@ export async function prepareNativeWorker<
   },
   config: RuntimeConfig,
 ) {
+  const pin = profileSelection(input.preference)
+  let minimaxProfile: MiniMaxProfileProtection | undefined
+  if (pin) {
+    if (input.cli !== 'minimax' || !config.minimaxHome || !config.minimaxRegion || !config.minimaxExpectedConfigDigest) throw new Error('MiniMax 私有账号固定上下文缺失')
+    minimaxProfile = { root: config.minimaxHome, region: config.minimaxRegion, configDigest: config.minimaxExpectedConfigDigest, version: '0.6.12' }
+    assertMiniMaxProfileProtection(minimaxProfile, launch.env)
+  } else if (config.minimaxExpectedConfigDigest !== undefined) throw new Error('MiniMax 私有账号选择与固定上下文不匹配')
   const root = input.stateDirectory
   if (lstatSync(root).isSymbolicLink()) throw new Error('原生通信目录不是私有目录')
   const directory = mkdtempSync(join(root, 'native-request-'))
@@ -104,6 +113,7 @@ export async function prepareNativeWorker<
       request,
       JSON.stringify({
         ...publicInput,
+        ...(minimaxProfile ? { minimaxProfile } : {}),
         argv: nativeArgv,
         stopDirectory: join(directory, 'stop'),
         stopNonce: activeControl.nonce,

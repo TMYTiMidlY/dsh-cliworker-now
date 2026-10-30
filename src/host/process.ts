@@ -60,6 +60,12 @@ export interface RuntimeConfig {
   cursorExecutable?: string
   minimaxExecutable?: string
   minimaxHome?: string
+  /** Host-private fixed region paired with an explicitly resolved MiniMax root;
+   * not deployment configuration or authority to select an account by itself. */
+  minimaxRegion?: 'cn' | 'en'
+  /** Original signed account-only settings, injected only by private profile
+   * resolution; never accepted as deployment/tool/project account authority. */
+  minimaxExpectedConfigDigest?: string
   zcodeAuthDirectory?: string
   zcodeBuiltinConfig?: string
   stateDirectory?: string

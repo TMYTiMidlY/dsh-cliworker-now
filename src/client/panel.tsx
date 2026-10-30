@@ -460,6 +460,7 @@ function SessionPanel({
                     <strong>{CLI_LABELS[cliOf(worker.preference)]}</strong>
                     <p>{worker.mode === 'plan' ? 'CLI 规划模式' : '可编辑任务'}</p>
                     {worker.role && <p title={worker.role.summary}>角色：{worker.role.name}</p>}
+                    {cliOf(worker.preference) === 'minimax' && <p>{worker.preference.authProfile ? `独立导入档案 ${worker.preference.authProfile.id.slice(-8)} · 固定材料版本，不随新任务设置切换` : '原生账号来源 · 不随新任务设置切换'}</p>}
                     {worker.harnessConversation && (
                       <HarnessCapabilityNotes binding={worker.harnessConversation} />
                     )}

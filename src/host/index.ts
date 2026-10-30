@@ -1,3 +1,8 @@
+import type { AuthProfilePin } from '../shared/auth-profiles.ts'
+import { profileSelection } from './native-auth-profile-scope.ts'
+import { MiniMaxNativeAuthProfiles } from './native-auth-minimax-service.ts'
+import { parseAuthImportRequest, parseAuthManageRequest, parseAuthRequestJson } from './native-auth-profile-requests.ts'
+import { NativeAuthError, nativeAuthFailureCode } from './native-auth-files.ts'
 import { readCliAccountBinding } from './cli-account-binding.ts'
 import { SettingsCatalogCache } from './settings-catalog-cache.ts'
 import { workerRunResult } from './worker-result.ts'
@@ -64,6 +69,7 @@ import {
   DEFAULT_CONFIG,
   projectDirectory,
   isProcessCleanupUnconfirmedError,
+  ProcessCleanupUnconfirmedError,
   type ProcessBackend,
   type RuntimeConfig,
 } from './process.ts'
@@ -169,6 +175,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
 }
 
 const preferenceSchema = validate.object({
+  authProfile: validate.object({ id: validate.string().regex(/^ap_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/), materialRevision: validate.string().regex(/^m_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/) }).strict().optional(),
   cli: validate.enum(CLI_IDS).optional(),
   model: validate.string().min(1),
   effort: validate.enum(EFFORTS),
@@ -263,6 +270,7 @@ export class CliWorkerService extends TypertRemoteService {
   private selectionBindings = new WeakMap<Preference, string>()
   private selectionProjects = new WeakMap<Preference, string>()
   private displayedBindings = new Map<string, string>()
+  private profileTaskProofs?: Map<string, string>
   private settingsCatalogs?: SettingsCatalogCache
   private settingsInstance?: string
   private settingsSourceRevisions?: Map<CliId, number>
@@ -271,6 +279,7 @@ export class CliWorkerService extends TypertRemoteService {
   private harnessConversationStore?: HarnessConversationStore
   private nativeRunDone = new Map<string, Promise<Worker>>()
   private repairingDisplays = new Set<string>()
+  private nativeProfiles?: MiniMaxNativeAuthProfiles
 
   /** @param ctx - Harness services. @param config - Validated deployment options. */
   constructor(ctx: Context, config: Config) {
@@ -286,13 +295,11 @@ export class CliWorkerService extends TypertRemoteService {
     this.accounts = new AccountManager(this.backend, this.options, undefined, (cli, error) =>
       this.runtime.blockCatalogOnCleanup(cli, error),
     )
-    this.runtime = new WorkerRuntime(
-      new WorkerStorage(
-        config.stateDirectory ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'cliworker-now'),
-      ),
-      this.backend,
-      this.options,
-    )
+    const workerStorage = new WorkerStorage(stateDirectory)
+    const profiles = new MiniMaxNativeAuthProfiles(workerStorage.directory, this.backend, this.options)
+    this.nativeProfiles = profiles
+    this.runtime = new WorkerRuntime(workerStorage, this.backend, this.options, profiles)
+    this.ctx.effect(() => () => profiles.dispose())
     this.ctx.inject(['sessionController', 'subagents', 'llm'], (scope) => {
       const records = new HarnessConversationStore(this.runtime.storage.directory)
       this.harnessConversationStore = records
@@ -697,6 +704,66 @@ export class CliWorkerService extends TypertRemoteService {
     if (agent.ctx.get('sandboxPolicy')!.resolve({ session: agent.session }).mode === 'read-only')
       throw new Error('Harness 当前为只读权限；外部 CLI 需要可写运行状态，请先明确切换项目权限')
   }
+  private profileResources(): MiniMaxNativeAuthProfiles {
+    if (!this.nativeProfiles) {
+      const profiles = new MiniMaxNativeAuthProfiles(this.runtime.storage.directory, this.backend, this.options)
+      this.nativeProfiles = profiles
+      this.ctx.effect(() => () => profiles.dispose())
+    }
+    return this.nativeProfiles
+  }
+  private profileSignal(agent: Agent, signal: AbortSignal, write: boolean): AbortSignal {
+    if (agent.session.header.origin === 'subagent') throw new Error('原生账号档案只允许所属主对话管理或查看')
+    const active = AbortSignal.any([signal, this.disposed.signal]); active.throwIfAborted()
+    if (write) this.assertExecution(agent)
+    return active
+  }
+  private profileError(error: unknown, signal?: AbortSignal): Error {
+    const code = nativeAuthFailureCode(error)
+    if (code === 'CLEANUP_UNCONFIRMED') this.runtime.blockCatalogOnCleanup('minimax', new ProcessCleanupUnconfirmedError())
+    return code ? new NativeAuthError(code) : publicOperationError(error, signal)
+  }
+  private profilesForAgent(agent: Agent, signal: AbortSignal): string {
+    try {
+      this.profileSignal(agent, signal, false)
+      return JSON.stringify({ controlApiVersion: 1, profiles: this.profileResources().list(), validation: 'registered-not-live-checked',
+        importScope: 'minimax-account-only', quota: 'unavailable' })
+    } catch (error) { throw this.profileError(error, signal) }
+  }
+  private async importProfileForAgent(agent: Agent, input: unknown, signal: AbortSignal): Promise<string> {
+    try {
+      const active = this.profileSignal(agent, signal, true), request = parseAuthImportRequest(input)
+      this.runtime.assertCliEnabled('minimax'); this.runtime.assertAccountIdle('minimax')
+      if (this.accounts.isBusy('minimax')) throw new NativeAuthError('BUSY')
+      const { cli: _cli, ...parameters } = request
+      const profile = await this.profileResources().import({ ...parameters, signal: active },
+        operationSignal => resolveCliExecutable('minimax', this.backend, this.options, operationSignal))
+      // A committed receipt remains the result even if cancellation arrives
+      // after publication; do not relabel an applied import as uncommitted.
+      return JSON.stringify({ controlApiVersion: 1, profile, importScope: 'account-only',
+        notice: '仅导入登录及支持的必要连接、隐私和权限设置；不迁业务智能体或历史。本地独立不保证远端refresh family独立，失败导入也可能影响远端续期；无额度或余额证明。' })
+    } catch (error) { throw this.profileError(error, signal) }
+  }
+  private manageProfileForAgent(agent: Agent, input: unknown, signal: AbortSignal): string {
+    try {
+      this.profileSignal(agent, signal, true)
+      const { cli: _cli, ...request } = parseAuthManageRequest(input)
+      return JSON.stringify({ controlApiVersion: 1, profile: this.profileResources().manage(request) })
+    } catch (error) { throw this.profileError(error, signal) }
+  }
+  private selectedProfile(cli: CliId, selection?: string, agyAccount?: 'default' | 'lxy'): Readonly<AuthProfilePin> | null | undefined {
+    if (selection === undefined) return undefined
+    if (cli !== 'minimax' || agyAccount !== undefined) throw new NativeAuthError('UNSUPPORTED')
+    return selection === 'native' ? null : this.profileResources().select(selection)
+  }
+  private async queryProfileCatalog(profile: AuthProfilePin, cli: CliId, backend: ProcessBackend, config: RuntimeConfig, project: string, signal: AbortSignal, expected?: string) {
+    profileSelection({ cli, model: 'scope', effort: 'default', authProfile: profile })
+    try {
+      const executable = await resolveCliExecutable(cli, backend, config, signal)
+      return await this.profileResources().run(profile, executable,
+        operation => authorizedCatalog(cli, backend, operation.config, project, operation.signal, expected), signal)
+    } catch (error) { throw this.profileError(error, signal) }
+  }
   private async queryCatalog(...args: Parameters<typeof authorizedCatalog>) {
     try {
       return await authorizedCatalog(...args)
@@ -707,10 +774,17 @@ export class CliWorkerService extends TypertRemoteService {
   }
   private async querySelection(...args: Parameters<typeof authorizeSelection>) {
     try {
+      const [preference, backend, config, project, signal, expected] = args, profile = profileSelection(preference)
+      if (profile) {
+        const executable = await resolveCliExecutable('minimax', backend, config, signal)
+        return await this.profileResources().run(profile, executable,
+          operation => authorizeSelection(preference, backend, operation.config, project, operation.signal, expected), signal)
+      }
       return await authorizeSelection(...args)
     } catch (error) {
       if (isProcessCleanupUnconfirmedError(error))
         this.runtime.blockCatalogOnCleanup(cliOf(args[0]), error)
+      if (nativeAuthFailureCode(error)) throw this.profileError(error, args[4])
       throw error
     }
   }
@@ -830,7 +904,7 @@ export class CliWorkerService extends TypertRemoteService {
     if (result.status !== 'resolved') throw new Error('请明确使用 Qoder 或 Qoder CN，模型查询不会代答版本选择')
     return result.cli
   }
-  private async conversationCatalog(agent: Agent, cli: CliId, signal: AbortSignal, agyAccount?: 'default' | 'lxy'): Promise<Catalog> {
+  private async conversationCatalog(agent: Agent, cli: CliId, signal: AbortSignal, agyAccount?: 'default' | 'lxy', authProfile?: string): Promise<Catalog> {
     const control = AbortSignal.any([signal, this.disposed.signal])
     control.throwIfAborted()
     if (agent.session.header.origin === 'subagent') throw new Error('需要所属主对话 Agent')
@@ -838,14 +912,18 @@ export class CliWorkerService extends TypertRemoteService {
     const project = this.project(agent)
     this.runtime.assertCliEnabled(cli)
     if (this.accounts.isBusy(cli)) throw new Error('请先关闭账号终端')
-    const setup = this.runtime.storage.conversationSetup(agent.id, project, cli)
-    const explicitAccount = agyAccount !== undefined
+    const selected = this.selectedProfile(cli, authProfile, agyAccount)
+    const setup = this.runtime.storage.conversationSetup(agent.id, project, cli, selected)
+    const profile = selected === undefined ? setup?.preference.authProfile : selected ?? undefined
+    const explicitAccount = agyAccount !== undefined || authProfile !== undefined
     const config = explicitAccount ? { ...this.options, agyAccount }
       : setup ? agyConfigForPreference(this.options, setup.preference) : this.options
-    const cache = explicitAccount ? undefined : (this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory))
+    const cache = explicitAccount || profile ? undefined : (this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory))
     const revision = cache?.revision(cli) ?? 0
     // Explicit discovery is not a rebind. Native lookup still checks identity before/after discovery.
-    const result = await this.queryCatalog(cli, this.backend, config, project, control, explicitAccount ? undefined : setup?.binding)
+    const result = profile
+      ? await this.queryProfileCatalog(profile, cli, this.backend, config, project, control, explicitAccount ? undefined : setup?.binding)
+      : await this.queryCatalog(cli, this.backend, config, project, control, explicitAccount ? undefined : setup?.binding)
     control.throwIfAborted()
     if (this.project(agent) !== project) throw new Error('项目已变更，请重试')
     this.runtime.assertCliEnabled(cli)
@@ -855,19 +933,20 @@ export class CliWorkerService extends TypertRemoteService {
     cache?.remember(project, result, revision)
     return result.catalog
   }
-  private async configureConversation(agent: Agent, cli: CliId, model: string, effort: string | undefined, signal: AbortSignal, agyAccount?: 'default' | 'lxy') {
+  private async configureConversation(agent: Agent, cli: CliId, model: string, effort: string | undefined, signal: AbortSignal, agyAccount?: 'default' | 'lxy', authProfile?: string) {
     this.assertExecution(agent)
     return this.withDispatchSetup(agent, signal, cli, async (project, control) => {
-      const current = this.runtime.storage.conversationSetup(agent.id, project, cli)
+      const selected = this.selectedProfile(cli, authProfile, agyAccount)
+      const current = this.runtime.storage.conversationSetup(agent.id, project, cli, selected)
       if (!current) throw new Error('FIRST_SELECTION_REQUIRED：本父会话没有完整派遣设定；请通过 cliworker_start 的 model、effort、可选 role 参数建立设定，不会弹出选型问题；未创建 Worker')
       const original = JSON.stringify(current)
       const accountOverride = cli === 'antigravity' && agyAccount !== undefined
       const catalogResult = accountOverride
         ? await this.queryCatalog(cli, this.backend, { ...this.options, agyAccount }, project, control)
-        : { catalog: await this.conversationCatalog(agent, cli, control) }
+        : { catalog: await this.conversationCatalog(agent, cli, control, undefined, authProfile) }
       const catalog = catalogResult.catalog
       const retainedAccount = accountOverride ? agyAccount : current.preference.agyAccount
-      const selection = preferenceSchema.parse({ cli, model, effort: effort ?? 'default', ...(cli === 'antigravity' && retainedAccount !== undefined ? { agyAccount: retainedAccount } : {}) })
+      const selection = preferenceSchema.parse({ cli, model, effort: effort ?? 'default', ...(current.preference.authProfile ? { authProfile: current.preference.authProfile } : {}), ...(cli === 'antigravity' && retainedAccount !== undefined ? { agyAccount: retainedAccount } : {}) })
       validatePreference(selection, catalog)
       const preference = resolveModel(selection, catalog.models)
       if (!catalog.models.some(choice => choice.id === model) && preference.model !== model)
@@ -881,7 +960,7 @@ export class CliWorkerService extends TypertRemoteService {
       if (this.accounts.isBusy(cli)) throw new Error('请先关闭账号终端')
       if (checked.binding !== selectedBinding) throw new Error(ACCOUNT_CHANGED)
       if (checked.preference.model !== preference.model) throw new Error('模型与思考强度不匹配')
-      if (JSON.stringify(this.runtime.storage.conversationSetup(agent.id, project, cli)) !== original)
+      if (JSON.stringify(this.runtime.storage.conversationSetup(agent.id, project, cli, selected)) !== original)
         throw new Error('本会话确认设定已变化，未覆盖新设定')
       this.runtime.storage.setConversationSetup(agent.id, project, { ...current, preference, binding: checked.binding })
       return { controlApiVersion: 1, cli, scope: 'current-parent-project-cli', configuredModel: preference.model,
@@ -889,12 +968,14 @@ export class CliWorkerService extends TypertRemoteService {
     })
   }
   /** Agent-controlled setup: validate explicit parameters or reuse a complete setup, never ask. */
-  private async chooseDispatch(agent: Agent, callerSignal: AbortSignal, cli: CliId, mode?: TaskMode, expectedModel?: string, agyAccount?: 'default' | 'lxy', directModel?: string, directEffort?: Effort, directRole?: string): Promise<DispatchSetup> {
+  private async chooseDispatch(agent: Agent, callerSignal: AbortSignal, cli: CliId, mode?: TaskMode, expectedModel?: string, agyAccount?: 'default' | 'lxy', directModel?: string, directEffort?: Effort, directRole?: string, authProfile?: string): Promise<DispatchSetup> {
     return this.withDispatchSetup(agent, callerSignal, cli, async (project, signal) => {
-      const current = this.runtime.storage.conversationSetup(agent.id, project, cli)
+      const selected = this.selectedProfile(cli, authProfile, agyAccount)
+      const current = this.runtime.storage.conversationSetup(agent.id, project, cli, selected)
       const original = JSON.stringify(current)
-      const saved = current ?? this.runtime.storage.dispatchSetup(project, cli)
-      const accountOverride = cli === 'antigravity' && agyAccount !== undefined
+      const saved = current ?? this.runtime.storage.dispatchSetup(project, cli, selected ?? undefined)
+      const profile = selected === undefined ? saved?.preference.authProfile : selected ?? undefined
+      const accountOverride = cli === 'antigravity' && agyAccount !== undefined || authProfile !== undefined
       if (!directModel && !saved)
         throw new Error('MODEL_REQUIRED：请先调用 cliworker_models({cli})，再用 model、effort 和可选 role 调用 cliworker_start；未创建 Worker，不会弹出选型问题')
       if (!directModel && !directEffort && expectedModel !== undefined && saved?.preference.model !== expectedModel)
@@ -909,14 +990,15 @@ export class CliWorkerService extends TypertRemoteService {
         ? { ...this.options, agyAccount: selectedAccount } : this.options
       this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
       const catalogRevision = this.settingsCatalogs.revision(cli)
-      const { catalog, binding } = await this.queryCatalog(cli, this.backend, scopedConfig, project, signal,
-        !directModel && !accountOverride ? saved?.binding : undefined)
+      const { catalog, binding } = profile
+        ? await this.queryProfileCatalog(profile, cli, this.backend, scopedConfig, project, signal, !directModel && !accountOverride ? saved?.binding : undefined)
+        : await this.queryCatalog(cli, this.backend, scopedConfig, project, signal, !directModel && !accountOverride ? saved?.binding : undefined)
       signal.throwIfAborted()
       this.runtime.assertCliEnabled(cli)
       if (catalog.executionUnavailable) throw new Error(catalog.executionUnavailable)
       if (catalog.allowedModes && (!mode || !catalog.allowedModes.includes(mode)))
         throw new Error('OpenCode v2 当前仅支持显式只读纯文本，请使用 read_only；编辑和工具尚未开放')
-      this.settingsCatalogs.remember(project, { catalog, binding }, catalogRevision)
+      if (!profile) this.settingsCatalogs.remember(project, { catalog, binding }, catalogRevision)
       if (!directModel && !accountOverride && saved?.binding !== binding) throw new Error(ACCOUNT_CHANGED)
       if (!directModel && directEffort === undefined) validatePreference(saved!.preference, catalog)
       const model = directModel ?? saved!.preference.model
@@ -926,7 +1008,7 @@ export class CliWorkerService extends TypertRemoteService {
         ? saved.preference.effort : undefined
       const effort = directEffort ?? reusableEffort ?? (choice.efforts.includes('default') ? 'default' : choice.efforts.length === 1 ? choice.efforts[0] : undefined)
       if (effort === undefined) throw new Error('EFFORT_REQUIRED：该模型支持多个强度且没有 default，请按 cliworker_models 的 efforts 显式提供 effort；未创建 Worker')
-      const preference = resolveModel(preferenceSchema.parse({ cli, model, effort,
+      const preference = resolveModel(preferenceSchema.parse({ cli, model, effort, ...(profile ? { authProfile: profile } : {}),
         ...(cli === 'antigravity' && selectedAccount !== undefined ? { agyAccount: selectedAccount } : {}) }), catalog.models)
       if (directModel && !catalog.models.some(item => item.id === directModel) && preference.model !== directModel)
         throw new Error(directEffort === undefined ? 'EFFORT_REQUIRED：精确模型变体需要匹配的 effort，请查询目录；未创建 Worker' : '精确模型标识与思考强度不匹配；未创建 Worker')
@@ -943,7 +1025,7 @@ export class CliWorkerService extends TypertRemoteService {
       this.runtime.assertCliEnabled(cli)
       if (this.project(agent) !== project) throw new Error('项目已变更，请重新调用')
       if (this.accounts?.isBusy(cli)) throw new Error('请先关闭账号终端')
-      if (JSON.stringify(this.runtime.storage.conversationSetup(agent.id, project, cli)) !== original)
+      if (JSON.stringify(this.runtime.storage.conversationSetup(agent.id, project, cli, selected)) !== original)
         throw new Error('本会话设定已变化；未覆盖新设定')
       const setup: DispatchSetup = { preference, role, binding }
       if (directModel !== undefined || directEffort !== undefined || directRole !== undefined || accountOverride)
@@ -1278,6 +1360,7 @@ export class CliWorkerService extends TypertRemoteService {
               title: { type: 'string', required: true },
               prompt: { type: 'string', required: true },
               agy_account: { type: 'string', description: 'Antigravity only: default or lxy (agy-lxy). Selects the child HOME without changing the parent or other CLI.' },
+              auth_profile: { type: 'string', description: 'MiniMax-only imported profile ID for this new Worker; native explicitly selects the original native source. Omit to reuse only a valid current complete setup/default. Cannot combine agy_account; existing Workers keep their fixed source/version.' },
               model: { type: 'string', description: 'Exact model ID from cliworker_models. Required when no valid complete setup exists; never guessed and no user question is opened.' },
               effort: { type: 'string', description: 'Actual supported effort. Omit to reuse the same model’s valid saved effort, or its advertised default/only effort; ambiguous choices return EFFORT_REQUIRED.' },
               role: { type: 'string', description: 'Exact preset ID from cliworker_roles, or none. Omit to reuse a valid setup’s role; a first explicit model with no setup uses no preset. Existing Workers are not changed.' },
@@ -1312,11 +1395,11 @@ export class CliWorkerService extends TypertRemoteService {
               if (agyAccount !== undefined && cli !== 'antigravity') throw new Error('agy_account 仅适用于 Antigravity')
               if (cli === 'kimi' && args.read_only) throw new Error('Kimi 非交互模式不支持只读派遣')
               const dispatchSignal = AbortSignal.any([exec.signal, this.disposed.signal])
-              const setup = expectedModel === undefined && agyAccount === undefined && directModel === undefined && directEffort === undefined && directRole === undefined
+              const setup = expectedModel === undefined && agyAccount === undefined && directModel === undefined && directEffort === undefined && directRole === undefined && args.auth_profile === undefined
                 ? await this.chooseDispatch(exec.agent, dispatchSignal, cli, args.read_only ? 'plan' : 'accept-edits')
-                : agyAccount === undefined && directModel === undefined && directEffort === undefined && directRole === undefined
+                : agyAccount === undefined && directModel === undefined && directEffort === undefined && directRole === undefined && args.auth_profile === undefined
                   ? await this.chooseDispatch(exec.agent, dispatchSignal, cli, args.read_only ? 'plan' : 'accept-edits', expectedModel)
-                  : await this.chooseDispatch(exec.agent, dispatchSignal, cli, args.read_only ? 'plan' : 'accept-edits', expectedModel, agyAccount, directModel, directEffort, directRole)
+                  : await this.chooseDispatch(exec.agent, dispatchSignal, cli, args.read_only ? 'plan' : 'accept-edits', expectedModel, agyAccount, directModel, directEffort, directRole, args.auth_profile === undefined ? undefined : validate.string().min(1).max(100).parse(args.auth_profile))
               exec.signal.throwIfAborted()
               if (expectedModel !== undefined) {
                 if (setup.preference.model !== expectedModel) throw new Error('预期模型与本会话已确认选型不匹配；请先显式配置，未创建 Worker')
@@ -1367,6 +1450,37 @@ export class CliWorkerService extends TypertRemoteService {
       'cliworker:status',
     )
     this.ctx.effect(() => register(defineTool({
+      name: 'cliworker_auth_profiles',
+      description: '只读列出本机已登记的原生账号档案安全描述，当前仅MiniMax；不读取登录材料、不启动Native、不核实时授权/余额。只限主对话；登记available不等于当前账号可用，既有Worker来源不变。',
+      parameters: {}, output, isConcurrencySafe: () => true,
+      execute: async (_args, exec) => {
+        if (!exec.agent) throw new Error('A parent Agent is required')
+        return this.profilesForAgent(exec.agent, exec.signal)
+      },
+    })), 'cliworker:auth-profiles')
+    this.ctx.effect(() => register(defineTool({
+      name: 'cliworker_auth_import',
+      description: '从用户明确授权的同CLI绝对目录导入原生账号。当前仅MiniMax标准prod cn/en、account-only：登录与支持的必要隐私/权限，不迁业务agents/提示/工作目录/历史/MCP/hooks，不改原账号。须可写非plan主对话。可能运行原生准备/续期，副本可能同远端refresh family；失败也可能影响远端续期，不自动重试。request_id用于精确重放；不接受token/key/任意执行器。只返回安全登记回执，不会切旧Worker或证明额外额度。',
+      parameters: { cli: { type: 'string', required: true, description: '当前仅minimax；mcode/mmx是同CLI别名。' }, source_root: { type: 'string', required: true, description: '用户已授权的本机同CLI绝对目录；不是shell别名或凭据文本。' }, region: { type: 'string', required: true, description: '明确cn或en；不猜区域或回退其它账号。' }, label: { type: 'string', required: true }, request_id: { type: 'string', required: true }, profile_id: { type: 'string' }, expected_record_revision: { type: 'number' } },
+      output, isConcurrencySafe: () => false,
+      execute: async (args, exec) => {
+        if (!exec.agent) throw new Error('A parent Agent is required')
+        return this.importProfileForAgent(exec.agent, { cli: args.cli, sourceRoot: args.source_root, region: args.region, label: args.label, requestId: args.request_id,
+          ...(args.profile_id !== undefined ? { id: args.profile_id } : {}), ...(args.expected_record_revision !== undefined ? { expectedRecordRevision: args.expected_record_revision } : {}) }, exec.signal)
+      },
+    })), 'cliworker:auth-import')
+    this.ctx.effect(() => register(defineTool({
+      name: 'cliworker_auth_manage',
+      description: '按profile_id及expected_record_revision做CAS改名/启用/停用；当前仅MiniMax，须可写非plan主对话。忙碌拒绝，不删除材料、会话或历史，不换已有Worker来源；停用阻止后续准入而不妨碍owned停止。request_id只回原精确回执，不把重放当重新验权。',
+      parameters: { cli: { type: 'string', required: true }, profile_id: { type: 'string', required: true }, expected_record_revision: { type: 'number', required: true }, request_id: { type: 'string', required: true }, label: { type: 'string' }, enabled: { type: 'boolean' } },
+      output, isConcurrencySafe: () => false,
+      execute: async (args, exec) => {
+        if (!exec.agent) throw new Error('A parent Agent is required')
+        return this.manageProfileForAgent(exec.agent, { cli: args.cli, id: args.profile_id, expectedRecordRevision: args.expected_record_revision, requestId: args.request_id,
+          ...(args.label !== undefined ? { label: args.label } : {}), ...(args.enabled !== undefined ? { enabled: args.enabled } : {}) }, exec.signal)
+      },
+    })), 'cliworker:auth-manage')
+    this.ctx.effect(() => register(defineTool({
       name: 'cliworker_concurrency',
       description: '正式在线管理插件全局并发预算，影响所有 CLI 和父会话，不代表 AGY 或其他厂商配额。省略 limit 只读安全统计（globalActive/globalQueued/limit及本父会话计数），不泄露其他任务。明确传1–12整数先私有持久化再立即调度；默认8。提高释放eligible队列，降低不杀不取消在途任务；同会话/同目录写串行及全部原门禁保持。DSH宿主active-child政策独立，插件12不保证同root可派12；宿主容量满时原Task/run留队，不重复新建或自动改Hostpolicy。写须主会话可写且不在plan，子Agent拒绝；无需重载/重启，不自动修改账号/模型/权限。',
       parameters: { limit: { type: 'number', description: '可选：明确修改全局限制的1–12整数；省略只读。' } }, output,
@@ -1390,20 +1504,23 @@ export class CliWorkerService extends TypertRemoteService {
     this.ctx.effect(() => register(defineTool({
       name: 'cliworker_models',
       description: '只读查询本父会话已有 Worker 或显式cli账号范围的精确模型ID/label/efforts/variants；两种选择器互斥。AGY可在cli查询时显式传agy_account=default或lxy，查询该账号而不沿用失效旧绑定；不重绑定、不建立确认、不启动任务/改偏好。省略账号仍保留原绑定校验，Worker查询不允许账号覆盖。已有Worker换模用configure；新Worker用start或configure_conversation显式选型。目录不是远端权益保证；不从提示词猜模型。',
-      parameters: { worker_id: { type: 'string' }, worker_name: { type: 'string' }, cli: { type: 'string', description: '明确 CLI 查询目录；与 worker_id/worker_name 互斥，不建立首次设定。' }, agy_account: { type: 'string', description: '仅用于显式 Antigravity cli 查询：default 或 lxy。只读发现该账号目录，不改已保存设定；不能与 Worker 选择器混用。' } }, output,
+      parameters: { worker_id: { type: 'string' }, worker_name: { type: 'string' }, cli: { type: 'string', description: '明确 CLI 查询目录；与 worker_id/worker_name 互斥，不建立首次设定。' }, auth_profile: { type: 'string', description: '仅MiniMax显式CLI查询：导入profile ID或native原生默认；不能与Worker selector/agy_account合用，不建立或修改设定。' }, agy_account: { type: 'string', description: '仅用于显式 Antigravity cli 查询：default 或 lxy。只读发现该账号目录，不改已保存设定；不能与 Worker 选择器混用。' } }, output,
       isConcurrencySafe: () => true,
       execute: async (args, exec) => {
         if (!exec.agent || exec.agent.session.header.origin === 'subagent') throw new Error('需要所属主对话 Agent')
         const agyAccount = args.agy_account === undefined ? undefined : validate.enum(['default', 'lxy']).parse(args.agy_account)
         if (agyAccount !== undefined && (args.cli === undefined || args.worker_id !== undefined || args.worker_name !== undefined))
           throw new Error('agy_account 仅用于显式 cli 目录查询，不能与 Worker 选择器同时使用')
+        const authProfile = args.auth_profile === undefined ? undefined : validate.string().min(1).max(100).parse(args.auth_profile)
+        if (authProfile !== undefined && (args.cli === undefined || args.worker_id !== undefined || args.worker_name !== undefined || agyAccount !== undefined))
+          throw new NativeAuthError('INVALID_INPUT')
         if (args.cli !== undefined) {
           if (args.worker_id || args.worker_name) throw new Error('cli 与 Worker 选择器不能同时使用')
           const cli = await this.controlCli(args.cli, exec.signal)
           if (agyAccount !== undefined && cli !== 'antigravity') throw new Error('agy_account 仅适用于 Antigravity')
-          const catalog = await this.conversationCatalog(exec.agent, cli, exec.signal, agyAccount)
+          const catalog = await this.conversationCatalog(exec.agent, cli, exec.signal, agyAccount, authProfile)
           const setup = this.runtime.storage.conversationSetup(exec.agent.id, this.project(exec.agent), cli)
-          const explicitAccount = agyAccount !== undefined
+          const explicitAccount = agyAccount !== undefined || authProfile !== undefined
           return JSON.stringify({ controlApiVersion: 1, cli, scope: explicitAccount ? 'explicit-account-read-only' : 'current-parent-project-cli',
             ...(explicitAccount ? { agyAccount } : {}), firstSelectionConfirmed: !explicitAccount && !!setup,
             configuredModel: explicitAccount ? null : setup?.preference.model ?? null,
@@ -1421,7 +1538,7 @@ export class CliWorkerService extends TypertRemoteService {
     this.ctx.effect(() => register(defineTool({
       name: 'cliworker_configure_conversation',
       description: '仅重配当前父会话/project/CLI已有完整设定的模型/强度，保留原角色，不改项目默认、其他父会话或已有Worker。先用cliworker_models的cli查询精确目录；本工具不执行模型。缺设定报FIRST_SELECTION_REQUIRED，此时直接用start的model、effort、可选role参数建立设定；不会向用户提问。成功后普通start首个prompt即新模型，不要先派旧模型空任务再配置。',
-      parameters: { cli: { type: 'string', required: true }, model: { type: 'string', required: true }, effort: { type: 'string' }, agy_account: { type: 'string', description: 'Antigravity only: default or lxy; switches the account route for future new Workers in this parent.' } }, output,
+      parameters: { cli: { type: 'string', required: true }, model: { type: 'string', required: true }, effort: { type: 'string' }, auth_profile: { type: 'string', description: 'MiniMax profile ID or native; only reconfigure an existing complete setup in that source/version domain, never an existing Worker.' }, agy_account: { type: 'string', description: 'Antigravity only: default or lxy; switches the account route for future new Workers in this parent.' } }, output,
       isConcurrencySafe: () => false,
       execute: async (args, exec) => {
         if (!exec.agent) throw new Error('A parent Agent is required')
@@ -1429,7 +1546,8 @@ export class CliWorkerService extends TypertRemoteService {
         const cli = await this.controlCli(args.cli, exec.signal)
         const agyAccount = args.agy_account === undefined ? undefined : validate.enum(['default', 'lxy']).parse(args.agy_account)
         if (agyAccount !== undefined && cli !== 'antigravity') throw new Error('agy_account 仅适用于 Antigravity')
-        return JSON.stringify(await this.configureConversation(exec.agent, cli, args.model, args.effort, exec.signal, agyAccount))
+        return JSON.stringify(await this.configureConversation(exec.agent, cli, args.model, args.effort, exec.signal, agyAccount,
+          args.auth_profile === undefined ? undefined : validate.string().min(1).max(100).parse(args.auth_profile)))
       },
     })), 'cliworker:configure-conversation')
     this.ctx.effect(() => register(defineTool({
@@ -1857,6 +1975,90 @@ export class CliWorkerService extends TypertRemoteService {
       throw failure(error)
     }
   }
+  /** @param parentSessionId - Owning main session. @param signal - Read lifetime. @returns Safe registered profile descriptions, not live auth/quota. */
+  @Remote('authProfiles')
+  async authProfiles(parentSessionId: string, signal: AbortSignal): Promise<string> {
+    try { return this.profilesForAgent(await this.parent(parentSessionId), signal) }
+    catch (error) { throw failure(error, signal) }
+  }
+  /** @param parentSessionId - Owning writable main session. @param request - Closed account-only import request JSON, never credentials. @param signal - Full import lifetime. @returns Committed safe receipt JSON. */
+  @Remote('authImport')
+  async authImport(parentSessionId: string, request: string, signal: AbortSignal): Promise<string> {
+    try { return await this.importProfileForAgent(await this.parent(parentSessionId), parseAuthRequestJson(request), signal) }
+    catch (error) { throw failure(error, signal) }
+  }
+  /** @param parentSessionId - Owning writable main session. @param request - Closed CAS management JSON. @param signal - Request lifetime. @returns Safe management receipt JSON. */
+  @Remote('authManage')
+  async authManage(parentSessionId: string, request: string, signal: AbortSignal): Promise<string> {
+    try { return this.manageProfileForAgent(await this.parent(parentSessionId), parseAuthRequestJson(request), signal) }
+    catch (error) { throw failure(error, signal) }
+  }
+  private assertTaskSourceOwner(agent: Agent): void {
+    if (this.ctx.agents.get(agent.id) !== agent) throw new Error('所属主会话已关闭或重建，请重新打开设置')
+  }
+  private taskSourceKey(parent: string, project: string, pin?: AuthProfilePin): string {
+    return JSON.stringify([parent, project, 'minimax', pin?.id ?? 'native', pin?.materialRevision ?? null])
+  }
+  /** @param parentSessionId - Owning main session. @param signal - Metadata lifetime. @returns Safe registry/current selection and write capability, not live authentication. */
+  @Remote('authTaskSettings')
+  async authTaskSettings(parentSessionId: string, signal: AbortSignal): Promise<string> {
+    try {
+      const agent = await this.parent(parentSessionId); this.assertTaskSourceOwner(agent); this.profileSignal(agent, signal, false)
+      let writable = true; try { this.assertExecution(agent) } catch { writable = false }
+      const current = this.runtime.storage.conversationSetup(agent.id, this.project(agent), 'minimax')
+      return JSON.stringify({ controlApiVersion: 1, profiles: this.profileResources().list(), current: current?.preference ?? null,
+        writable, importSupported: process.platform === 'linux' && process.arch === 'x64', validation: 'registered-not-live-checked' })
+    } catch (error) { throw failure(this.profileError(error, signal), signal) }
+  }
+  /** @param parentSessionId - Owning main session. @param source - Explicit MiniMax profile ID or native. @param signal - Read lifetime. @returns Fresh source-specific catalog and exact material pin, with no saved selection. */
+  @Remote('authTaskCatalog')
+  async authTaskCatalog(parentSessionId: string, source: string, signal: AbortSignal): Promise<string> {
+    try {
+      const agent = await this.parent(parentSessionId); this.assertTaskSourceOwner(agent)
+      const control = this.profileSignal(agent, signal, false)
+      const selected = this.selectedProfile('minimax', validate.string().min(1).max(100).parse(source)), pin = selected ?? undefined
+      const project = this.project(agent); this.runtime.assertCliEnabled('minimax')
+      if (this.accounts.isBusy('minimax')) throw new NativeAuthError('BUSY')
+      const result = pin ? await this.queryProfileCatalog(pin, 'minimax', this.backend, this.options, project, control)
+        : await this.queryCatalog('minimax', this.backend, this.options, project, control)
+      control.throwIfAborted(); this.assertTaskSourceOwner(agent); this.runtime.assertCliEnabled('minimax')
+      if (project !== this.project(agent)) throw new Error('项目已变更，请重新读取')
+      const key = this.taskSourceKey(agent.id, project, pin), proofs = this.profileTaskProofs ??= new Map()
+      if (!proofs.has(key) && proofs.size >= 64) proofs.delete(proofs.keys().next().value!)
+      proofs.set(key, result.binding)
+      const saved = this.runtime.storage.conversationSetup(agent.id, project, 'minimax', pin ?? null) ?? this.runtime.storage.dispatchSetup(project, 'minimax', pin)
+      return JSON.stringify({ controlApiVersion: 1, source, ...(pin ? { pin } : {}), catalog: result.catalog,
+        preference: saved?.binding === result.binding ? saved.preference : null })
+    } catch (error) { throw failure(this.profileError(error, signal), signal) }
+  }
+  /** @param parentSessionId - Owning writable main session. @param request - Closed complete source/model/effort JSON. @param signal - Save lifetime. @returns Parent-only future-task selection, never a Worker execution or project default write. */
+  @Remote('authTaskApply')
+  async authTaskApply(parentSessionId: string, request: string, signal: AbortSignal): Promise<string> {
+    try {
+      const agent = await this.parent(parentSessionId); this.assertTaskSourceOwner(agent)
+      const control = this.profileSignal(agent, signal, true)
+      const input = validate.object({ source: validate.string().min(1).max(100), preference: preferenceSchema.strict() }).strict().parse(parseAuthRequestJson(request))
+      const pin = profileSelection(input.preference)
+      if (cliOf(input.preference) !== 'minimax' || input.preference.agyAccount !== undefined || (input.source === 'native' ? !!pin : pin?.id !== input.source)) throw new NativeAuthError('INVALID_INPUT')
+      return await this.withDispatchSetup(agent, control, 'minimax', async (project, active) => {
+        this.assertTaskSourceOwner(agent)
+        if (project !== this.project(agent)) throw new Error('项目已变更，请重新打开设置')
+        const key = this.taskSourceKey(agent.id, project, pin), expected = this.profileTaskProofs?.get(key)
+        if (!expected) throw new Error('请先读取所选账号的模型目录，再应用完整组合')
+        if (this.accounts.isBusy('minimax')) throw new NativeAuthError('BUSY')
+        const before = JSON.stringify(this.runtime.storage.conversationSetup(agent.id, project, 'minimax'))
+        const checked = await this.querySelection(input.preference, this.backend, this.options, project, active, expected)
+        active.throwIfAborted(); this.assertTaskSourceOwner(agent); this.assertExecution(agent); this.runtime.assertCliEnabled('minimax')
+        if (this.accounts.isBusy('minimax')) throw new NativeAuthError('BUSY')
+        if (project !== this.project(agent) || this.profileTaskProofs?.get(key) !== expected) throw new Error('账号目录来源已变化，请重新读取')
+        if (JSON.stringify(this.runtime.storage.conversationSetup(agent.id, project, 'minimax')) !== before) throw new Error('当前新任务设定已变化，请重试')
+        const previous = this.runtime.storage.conversationSetup(agent.id, project, 'minimax', pin ?? null)
+        const role = previous?.binding === checked.binding ? previous.role : null
+        this.runtime.storage.setConversationSetup(agent.id, project, { preference: checked.preference, binding: checked.binding, role })
+        return JSON.stringify({ controlApiVersion: 1, source: input.source, preference: checked.preference, executed: false })
+      })
+    } catch (error) { throw failure(this.profileError(error, signal), signal) }
+  }
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param signal - Query lifetime. @returns Safe account status JSON. */
   @Remote('accountStatus')
   async accountStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
@@ -2120,6 +2322,13 @@ export class CliWorkerService extends TypertRemoteService {
       const expected = this.runtime.storage.accountBinding(workerId)
       if (!expected) throw new Error(this.runtime.missingAccountBindingNotice(workerId))
       this.runtime.assertCliEnabled(cli)
+      const profile = profileSelection(worker.preference)
+      if (profile) {
+        if (this.accounts.isBusy(cli)) throw new Error('请先关闭账号终端')
+        const result = await this.queryProfileCatalog(profile, cli, this.backend, this.options, worker.project, control, expected)
+        control.throwIfAborted(); this.runtime.get(agent.id, workerId); this.runtime.assertCliEnabled(cli)
+        return result.catalog
+      }
       this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
       let catalog = refresh ? undefined : this.settingsCatalogs.display(worker.project, cli, expected)
       if (!catalog) {
@@ -2201,6 +2410,7 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const agent = await this.parent(parentSessionId)
       let preference: Preference = preferenceSchema.parse(JSON.parse(selection))
+      if (profileSelection(preference)) throw new Error('此入口仅保存原生默认设置；导入档案须使用独立完整选型')
       const project = this.project(agent)
       this.runtime.assertCliEnabled(cliOf(preference))
       const { catalog } = await this.querySelection(
@@ -2239,7 +2449,9 @@ export class CliWorkerService extends TypertRemoteService {
       control.throwIfAborted()
       this.assertExecution(agent)
       const worker = this.runtime.get(agent.id, workerId)
-      const preference = preferenceSchema.parse(selection)
+      const declared = profileSelection(selection), fixed = profileSelection(worker.preference)
+      if (declared && JSON.stringify(declared) !== JSON.stringify(fixed)) throw new Error('已有会话不能切换账号档案或材料版本')
+      const preference = preferenceSchema.parse({ ...selection, ...(fixed ? { authProfile: fixed } : {}) })
       if (cliOf(preference) !== cliOf(worker.preference)) throw new Error('已有会话不能切换 CLI')
       const expected = this.runtime.storage.accountBinding(workerId)
       if (!expected) throw new Error(this.runtime.missingAccountBindingNotice(workerId))
@@ -2249,10 +2461,10 @@ export class CliWorkerService extends TypertRemoteService {
       if (this.accounts.isBusy(cliOf(preference))) throw new Error('请先关闭账号终端')
       this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
       const cached = this.settingsCatalogs.display(worker.project, cliOf(preference), expected)
-      if (!cached && !verifySource) throw new Error('模型目录已失效，请重试读取或在设置中刷新')
+      if (!cached && !verifySource && !fixed) throw new Error('模型目录已失效，请重试读取或在设置中刷新')
       const original = { expectedRunId: worker.runId, expectedModel: worker.preference.model }
       return await this.runtime.prepareFollowup(agent.id, workerId, control, async (prepared, preparationId) => {
-        const catalog = verifySource ? await this.workerCatalog(agent, workerId, prepared, true) : cached!
+        const catalog = verifySource || fixed ? await this.workerCatalog(agent, workerId, prepared, true) : cached!
         validatePreference(preference, catalog)
         const resolved = resolveModel(preference, catalog.models)
         if (verifySource && !catalog.models.some(model => model.id === preference.model) && resolved.model !== preference.model)

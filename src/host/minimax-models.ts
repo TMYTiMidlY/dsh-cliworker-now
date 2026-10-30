@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import { minimaxState } from './minimax-state.mjs'
 import { assertMiniMaxIdentityActive } from './minimax-identity.ts'
-import { MiniMaxAccountError, ensureMiniMaxVerifiedAccount, readMiniMaxAccount, sameMiniMaxAccountSnapshot, miniMaxAccountSnapshotDifference, type MiniMaxSource } from './minimax-accounts.ts'
+import { MiniMaxAccountError, minimaxSource, ensureMiniMaxVerifiedAccount, readMiniMaxAccount, sameMiniMaxAccountSnapshot, miniMaxAccountSnapshotDifference, type MiniMaxSource } from './minimax-accounts.ts'
 import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
 import type { Effort, ModelChoice } from '../shared/types.ts'
 const record = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -11,7 +11,7 @@ type Reason = 'spawn_failed' | 'stdin_io' | 'stream_io' | 'non_json_stdout' | 'i
   'init_contract' | 'session_shape' | 'model_control_missing' | 'permission_control_missing' | 'state_contract' | 'no_supported_provider' |
   'selected_model_mismatch' | 'advertisement_changed' | 'no_verified_configurations' | 'timeout' | 'caller_cancel' | 'byte_limit' | 'line_limit' | 'partial_line' | 'early_exit' | 'unexpected_exit' | 'stop_failed' | 'cleanup_unconfirmed'
 type Checks = Partial<Record<'protocolIs1' | 'agentMatches' | 'loadSessionTrue' | 'sessionIdValid' | 'hasModel' | 'hasPermission' | 'hasEffort' |
-  'currentModelAdvertised' | 'categoriesMatch' | 'modeSupported' | 'hasSupportedProviderRows' | 'selectedModelMatches', boolean>>
+  'currentModelAdvertised' | 'categoriesMatch' | 'modeSupported' | 'hasSupportedProviderRows' | 'selectedModelMatches' | 'nativeVersionMatches', boolean>>
 const RPC_CODES = [-32700, -32600, -32601, -32602, -32603, -32000, -32800] as const
 const EXIT_CODES = [0, 1, 2, 126, 127, 130, 137, 143] as const
 const EXIT_SIGNALS = ['SIGTERM', 'SIGKILL', 'SIGINT', 'SIGHUP'] as const
@@ -73,8 +73,9 @@ class MiniMaxConfigurationRejected extends Error {
 }
 export interface MiniMaxModelCatalog { models: ModelChoice[]; notice?: string }
 /** Bounded metadata only. Diagnostics never include raw wire, native errors or caller reasons. */
-export async function queryMiniMaxAcpModels(backend: ProcessBackend, config: RuntimeConfig, executable: string, cwd: string, source: MiniMaxSource, signal: AbortSignal): Promise<MiniMaxModelCatalog> {
+export async function queryMiniMaxAcpModels(backend: ProcessBackend, config: RuntimeConfig, executable: string, cwd: string, source: MiniMaxSource, signal: AbortSignal, expectedAgentVersion?: '0.6.12'): Promise<MiniMaxModelCatalog> {
   assertMiniMaxIdentityActive(signal)
+  if (expectedAgentVersion !== undefined && expectedAgentVersion !== '0.6.12') throw new MiniMaxAccountError('MiniMax 原生文件合同版本不受支持')
   const deadline = AbortSignal.timeout(Math.min(config.timeoutMs, 15000)), control = AbortSignal.any([signal, deadline])
   let phase: Phase = 'spawn', first: Readonly<FirstFailure> | undefined, checks: Checks = {}, rpcCode: RpcCode = 'none', rowIndex = 0, rowCount = 0
   let exitCode: ExitCode = 'none', exitSignal: ExitSignal = 'none', exited = false, ownedStop = false, stopRequested = false, completed = false, cleanupConfirmed = false, exitBeforeComplete = false, stdoutSeen = false, stderrSeen = false
@@ -91,8 +92,17 @@ export async function queryMiniMaxAcpModels(backend: ProcessBackend, config: Run
   }
   const active = () => { if (control.aborted) throw fail(signal.aborted ? 'caller_cancel' : 'timeout') }
   active()
+  let nativeEnvironment = source.env
+  if (config.minimaxExpectedConfigDigest !== undefined) {
+    const current = await minimaxSource(config, control)
+    if (current.root !== source.root || current.region !== source.region || current.selection !== source.selection || current.configuration !== source.configuration)
+      throw new MiniMaxAccountError('MiniMax 私有账号来源在目录启动前已变更')
+    nativeEnvironment = current.env
+    expectedAgentVersion ??= '0.6.12'
+    active()
+  }
   let child: ReturnType<ProcessBackend['spawn']>
-  try { child = backend.spawn({ argv: [executable, 'acp'], env: { ...source.env }, cwd, signal: control, graceMs: config.graceMs, stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' } }) }
+  try { child = backend.spawn({ argv: [executable, 'acp'], env: { ...nativeEnvironment }, cwd, signal: control, graceMs: config.graceMs, stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' } }) }
   catch { fail('spawn_failed'); throw failure() }
   let bytes = 0, buffer = ''
   const terminate = () => { stopRequested = true; child.terminate() }
@@ -190,7 +200,8 @@ export async function queryMiniMaxAcpModels(backend: ProcessBackend, config: Run
     phase = 'initialize'
     const init = await request('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'dsh-cliworker-now', version: '0.8.2' } })
     checks = { protocolIs1: init?.protocolVersion === 1, agentMatches: init?.agentInfo?.name === 'minimax-code', loadSessionTrue: init?.agentCapabilities?.loadSession === true }
-    if (!checks.protocolIs1 || !checks.agentMatches || !checks.loadSessionTrue) throw fail('init_contract')
+    if (expectedAgentVersion !== undefined) checks.nativeVersionMatches = init?.agentInfo?.version === expectedAgentVersion
+    if (!checks.protocolIs1 || !checks.agentMatches || !checks.loadSessionTrue || checks.nativeVersionMatches === false) throw fail('init_contract')
     let { state, observed } = await openSession()
     const baseline = new Set(observed.models.map(row => row.id))
     const rows = observed.models.filter(row => row.id.startsWith('m:minimax:'))

@@ -98,6 +98,39 @@ OAuth 模式与 pin SHALL 来自已授权源样本，在目标原生核验前后
 - **WHEN** 已登记材料的必要 kind、mode、策略版本或路由域缺失、不受支持或无法核验
 - **THEN** 拒绝来源，不补 native-principal/default、不覆盖旧签名记录、不自动迁移 legacy default/lxy
 
+### Requirement: MiniMax固定Native上下文
+MiniMax标准prod文件导入 SHALL 保留其已证native-principal身份，并用已签名的私有版本化policy固定cn/en、文件合同、保护模式及opaque刷新组。冷恢复 MUST 在任何携带凭据的UID或Native I/O之前验证policy并固定域，不从可变布局、marker、部署默认或环境回退选择端点。
+
+#### Scenario: 修改布局试图换区域
+- **WHEN** 已登记cn材料的可变文件被重键或改成en布局，即使格式有效且只有一个区域
+- **THEN** 原签名policy仍固定cn，失配MUST在另一域消费凭据前拒绝，不以稍后的principal摘要失败补证
+
+#### Scenario: 缺失和显式空配置
+- **WHEN** 支持的0.6.12来源config为缺失或显式空mapping
+- **THEN** 二者MUST保持不同的已证原生默认语义；native-default policy可接受原生初始化后的已证六字段形状，empty不得变成该另一模式
+- **AND** 未知provider/全局保护字段、已有未支持permission文件/plugin-hook-permissions不得静默丢弃；未选择account-only的原strict-source切片仍须证明agents真实absent
+
+#### Scenario: 用户明确只导入账号而非业务环境
+- **WHEN** 用户明确选择MiniMax account-only，来源含业务agents或其目录链接
+- **THEN** 不读取、跟随或复制业务定义/提示/工作目录/历史，不把新独立原生档案说成原业务行为的完整克隆
+- **AND** 仍核验必要连接、全局权限及隐私设置；未知保护或不能安全保留时明确拒绝，不把不迁业务当作忽略全局保护的理由
+
+#### Scenario: 账号-only保护漂移
+- **WHEN** 已登记的account-only目标配置改变dataContribution/memory、Ask模式、hard safety flags或加入未知保护
+- **THEN** 按原signed configDigest及严格目标schema拒绝，不能重新投影或normalize坏目标来匹配旧期望，亦不重设原身份合同
+
+#### Scenario: 原始期望贯通真正metadata和Native门口
+- **WHEN** 目标初次verifier已通过，但后续普通metadata或任务将携带凭据启动Native
+- **THEN** MUST按原signed保护摘要检查同次raw设置及当前private root/global保护，不信可变prepared env，Native bridge核真正继承和覆盖后的有效root/region/prod环境；不将早先成功替代当前门口
+
+#### Scenario: 收尾持久化错误与清理证据
+- **WHEN** Native已执行且scope关闭前后发生诊断或状态写入错误
+- **THEN** MUST仍join owning scope且保持实际confirmed或unconfirmed清理；真实cleanup品牌不得被普通EIO/取消掩盖，未确认组继续隔离，已确认不伪造清理未知
+
+#### Scenario: 私有policy与旧格式兼容
+- **WHEN** 新MiniMax policy发布并与旧legacy或OAuth材料共存
+- **THEN** 旧摘要算法、schema1/manifest1及旧回执MUST保持字节合同，新policy采用独立域且不自动升级旧MiniMax材料
+
 ### Requirement: 独立私有版本存储
 导入 SHALL 存入独立私有版本，不依赖回读原来源、凭据链接或共享历史；POSIX 目录0700、文件0600，Windows 必须有相应 ACL 证据。导入 MUST 不复制历史、会话数据库、锁、缓存、MCP、hooks 或外部可写路径；无法等价保留原生保护策略时拒绝，不以导入隔离为由放宽保护。
 
@@ -179,3 +212,11 @@ profile 的独立保存 MUST 不被描述为独立 OAuth grant、不同账号或
 #### Scenario: 刷新和快速切换
 - **WHEN** 用户切换账号页的来源或重新打开设置
 - **THEN** 旧请求不覆盖新来源草稿，模型按当前来源重新读取；不显示 token、原始配置、私有托管根、指纹或假额度
+
+#### Scenario: 关闭后重试未确认导入
+- **WHEN** 导入响应未确认且用户关闭/重开同一主会话设置并以原输入重试
+- **THEN** Client MUST复用尚未确认的request ID，不因组件卸载或旧组件迟到成功而清除活实例仍需的重放标识；合法回执只在当前实例消费后确认，不将对话级内存说成整页重载恢复
+
+#### Scenario: 外围来源失效及组合回执
+- **WHEN** 读取目录期间外围连接/权限状态变blocked，或应用响应与提交source/pin/model/effort不同
+- **THEN** MUST取消旧请求并使目录/完整草稿失效，解除blocked后重新询Host；不同组合不显示已保存，合法Native variant按原映射核对，不以旧UI可写状态替代Host实时权限门禁

@@ -70,6 +70,7 @@ for (const name of [
   'cursor-outcome',
   'native-minimax',
   'minimax-state',
+  'minimax-profile-protection',
   'qoder-durable-context',
   'kimi-durable-usage',
   'omp-context-inspection',
@@ -114,7 +115,7 @@ cpSync('src/host/pi-installation.d.mts', 'lib/types/host/pi-installation.d.mts')
 cpSync('src/host/native-launch.mjs', 'lib/types/host/native-launch.mjs')
 cpSync('src/host/native-launch.d.mts', 'lib/types/host/native-launch.d.mts')
 cpSync('src/host/native-spawn.mjs', 'lib/types/host/native-spawn.mjs')
-for (const name of ['opencode-v2-service', 'opencode-v2-ledger', 'native-opencode-v2', 'minimax-state', 'cursor-state', 'cursor-outcome', 'kimi-durable-usage', 'qoder-durable-context', 'omp-context-inspection', 'hermes-observer', 'native-hermes-home', 'native-http', 'native-attachments', 'native-agy-harness', 'native-harness-injection', 'native-harness-mcp', 'native-harness-extension', 'native-response', 'primary-response', 'codex-run-usage', 'http-rpc-response', 'grok-response', 'grok-durable-context', 'zcode-response', 'zcode-context-observation', 'windows-console-manifest']) {
+for (const name of ['opencode-v2-service', 'opencode-v2-ledger', 'native-opencode-v2', 'minimax-state', 'minimax-profile-protection', 'cursor-state', 'cursor-outcome', 'kimi-durable-usage', 'qoder-durable-context', 'omp-context-inspection', 'hermes-observer', 'native-hermes-home', 'native-http', 'native-attachments', 'native-agy-harness', 'native-harness-injection', 'native-harness-mcp', 'native-harness-extension', 'native-response', 'primary-response', 'codex-run-usage', 'http-rpc-response', 'grok-response', 'grok-durable-context', 'zcode-response', 'zcode-context-observation', 'windows-console-manifest']) {
   cpSync(`src/host/${name}.mjs`, `lib/types/host/${name}.mjs`)
   if (existsSync(`src/host/${name}.d.mts`)) cpSync(`src/host/${name}.d.mts`, `lib/types/host/${name}.d.mts`)
 }
@@ -126,6 +127,12 @@ for (const extension of ['mjs', 'ps1', 'd.mts']) {
   }
 }
 cpSync('src/host/private-launch.mjs', 'lib/types/host/private-launch.mjs')
+// Runtime assets resolved by emitted unbundled modules via import.meta.url
+// (managed-agent's terminal bridge, pi login helper, zcode resume helper) must
+// sit beside the typed modules that reference them, not only at the lib root.
+cpSync('src/host/terminal-bridge.mjs', 'lib/types/host/terminal-bridge.mjs')
+if (existsSync('src/host/pi-login.mjs')) cpSync('src/host/pi-login.mjs', 'lib/types/host/pi-login.mjs')
+if (existsSync('src/host/zcode-resume.mjs')) cpSync('src/host/zcode-resume.mjs', 'lib/types/host/zcode-resume.mjs')
 cpSync('src/host/pi-omp-environment.mjs', 'lib/types/host/pi-omp-environment.mjs')
 cpSync('src/host/pi-omp-environment.d.mts', 'lib/types/host/pi-omp-environment.d.mts')
 for (const name of ['own-account-lease', 'pi-omp-refresh', 'pi-omp-control']) {

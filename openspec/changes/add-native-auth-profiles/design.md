@@ -41,12 +41,35 @@ R0相同仅证明该refresh字段相同，**不独立证明当前access-token的
 
 不采用引用原来源或凭据symlink，因为它们不满足独立保存。默认原生来源仍是live reference，必须与imported snapshot在呈现及绑定上区分。
 
+### MiniMax-only implementation slice (2026-10-30)
+
+用户明确续做MiniMax导入及同分支交付。本轮只实现标准prod cn/en的MiniMax可用纵向切片：私有保存、显式选择、固定Worker来源、真实目录/首轮/续聊及提交推送；Hub/额度、AGY/Codex新增导入不扩大。原17项完整跨CLI任务不得仅凭本切片勾满。
+
+用户随后明确选择“只导入账号（推荐）”：仅登录、必要连接及隐私/权限设置，不迁移业务智能体、业务提示、工作目录或历史。该新档案是独立原生环境，不承诺复刻旧业务agent行为；不得读取/复制外部业务agents来暗中扩大任务，也不得声称已迁移其保护。账号-only入口须明确呈现此边界，保持宿主权限与原生任务授权，必要的全局连接/隐私/权限设置须独立核对，未知或无法安全保留则拒绝。业务agents不迁移并不等于可忽略全局permission/plugin-hook保护；此前strict-source切片的agents-absence限制不直接作为账号-only最终产品合同，需在实现该入口时分别测试和版本化。最终按人工要求核本轮所有有价值tracked/untracked/ignored成果，排敏整理后推原分支，不把凭据/业务内容或原始运行历史整包上传。
+
+- 已核安装程序仍0.6.12，auth/state重键格式按固定程序合同实现；纯codec不等于source授权、Native principal或导入完成。
+- MiniMax保持已证native-principal身份，不套用AGY R0/A0。新增窄的signed private `minimax-native-principal` policy，固定policyVersion、CLI、prod、0.6.12文件合同、cn/en、configPolicy及opaque refreshGroup；account-only单独签configDigest并使用新的HMAC域，不升级旧empty/native-default材料。保留旧legacy HMAC/schema1、OAuth及前两MiniMax模式的算法/回执原样；manifest2/registry2只作加法。冷恢复先验签并取得固定region/保护/刷新组，再进行该来源UID或Native I/O；不借可变marker/global env补authority。
+- 源config缺失与显式空mapping不能混同：标准ACP将缺失配置初始化为已证六字段默认值（memory关闭），显式{}走另一原生默认（memory开启）。policy `native-default`保留前者语义并允许其已证初始化形状，`empty`保持后者；不能把缺失硬写{}或在后验重设policy。未知provider/保护字段拒绝。
+- 原strict-source切片对root permission.json、agents、plugin-hook-permissions均守真实expected-absent，存在未支持外部agents仍拒；新增显式account-only才按人工选择排除业务agents的读取/跟随/复制，不拿此授权放过global permission/plugin-hook。account-only窄设置投影保留dataContribution/memory enabled、分清缺失与{}默认，目标固定Native Ask与两hard guards未跳过；丢弃已明确不迁的provider广告及模型偏好不是把任意偏好值验证为Native子schema。未知顶层/隐私嵌套及复杂保护继续拒绝。Native会生成agents/.builtin，目标真实verifier仍须核其独立新原生环境、无意外custom/外链/权限，而非删树或强求absent；Ask不是agent，不能宣称它替代全部定义规则。region必须固定并传每次子进程；只有实际依赖region preference的选择才采入该守卫，不复制无关历史/锁/identity缓存。
+- source guard保持至目标验证、owned进程真实清理、目标身份/保护后验完成，末尾seal后才发布；outer helper失败必须join inner store/Native工作，清理未知优先。直接target hook异常当场记录真实cleanup品牌，不允许store finally释放错误覆盖它而误放刷新组；原caller与guard signal组合，seal解除源监听后仍保留caller取消直到发布检查。按已证principal/region跨profile/root串行可能刷新的操作，不拿store写lease替代刷新组；正常Native刷新只改目标，不回写或回滚来源。
+- 每Worker保存私有profile/material pin，参数、目录缓存、未来完整设定、准入、任务和续聊共用同一解析context；无profile的legacy分支不迁移。只读列表/安全描述不含root、token、policy或摘要；管理限可写主会话，已有Worker不能改号，停用仍可停止已拥有进程。
+- Round22目标准备按原signed account-only config/global absence持guard，允许Native更新auth故短auth快照须完整seal/close再开低层ACP；目标预读仅放宽A lifetime，不放宽source或postUID。未过期A可前UID，过期/近到期A不得送UID或改expiry冒认证。init要求固定agentInfo.version=0.6.12且在session/new前检查；Native range cleanup已join后才做fresh auth/UID/原组后验，每层snapshot race都保留并join自己callback。所需外层deadline约束工作，不冒清理总墙钟硬上限。
+- fresh标准builtin仅核已证四名及能力/格式，拒未知custom/外链/permission，0644 public生成叶只在private0700根下且禁止执行/group-world write，不放宽auth/config0600。postUID再采样防等待期间已知漂移；这个采样器不是全异步窗口strict subtree/全部ABA或固定prompt provenance证明。固定assets override拒绝，每次verifier使用新private UUID cwd并核当前empty，不能把原business cwd或旧验证目录当干净环境。
+- Facade资源先登记deferred work再启动，dispose取消后join pending，真实cleanup debt独立latch，不能用pending清空解除隔离。管理Tool/Gateway共用closed请求、main/write/plan门禁、幂等/CAS和安全DTO；Round22实际3管理入口不代表彼时完整runtime/UI已交付。实际来源A lifetime不足的guarded preflight只证明拒绝条件，0UID/CLI/源写，不绕过门槛替原账号续期。
+- Round23原signed configDigest仅经Host-private config贯通：同次raw读取前核六字段，正常metadata及UID门口复核private root/config/global absence，低层spawn使用fresh有效env；Native bridge的原期望只入0600私有request，必须检查真正继承与覆盖后的四个环境键，init/load-new/prompt分别按固定版本和原保护准入。此本地有界采样不成为长任务连续C guard、完整ABA或prompt来源证明；不让模型任务套入导入30秒快照预算。
+- Runtime以ready/end gate接管facade.run scope，从出队固定材料授权到实际owned range/readers/steering/Harness及launch收尾持续持组，close/join在finish/安全回队之前。outer finally涵盖post-policy及CLI诊断持久化异常；cleanupState与是否已close分开归并，实际CCU优先且queue stop同样认双constructor-owned品牌。成功任务后本地保护失配保留正文/原生退出/confirmed清理并标待核，不把已执行改成零执行/自动重试。
+- 公开Preference只新增opaque `{id,materialRevision}` pin；新选择的auth_profile ID取head一次，MiniMax明确`native`返回原生来源，省略只沿当前已确认完整源。project完整设定及parent历史domain按profile/revision隔离，parent current只指针；profile目录不进入legacy展示缓存，原生默认configure/setPreference拒profile。Worker ID模型入口保原pin、缺省模型配置不掉回默认，不接受不同ID/材料替换。实际30关联文件915PASS及types/preview只是源码/合成证据，UI、vendor实机、部署和最终交付仍待。
+
+- Round24 MiniMax设置新增独立登记/导入/改名/启停及当前主会话未来新任务来源的原生控件；不混入旧项目原生默认form，不新增手动业务任务composer。Gateway `authTaskSettings`只回登记/current/可写性，不探测Native；`authTaskCatalog`明确native或ID取pin一次、fresh目录且无设定写，目录证明按parent/project/CLI/profile/revision分域且有界；`authTaskApply`只接完整source+model/effort/pin，fresh绑定重检，保同域role否则none，只写parent current/domain，不写项目默认或已有Worker。
+- 队列放行先核同一live parent Agent实例与当前project，再允许credential-bearing准备；catalog发布proof和apply写前都重核owner，最终仍核取消/权限/CLI/账号终端busy/project/proof/当前pointer CAS，无新await跨提交。只读独审的3个确定时序经父实际先红后修，不以最终拒写冒准备阶段零I/O。
+- UI切源、取消、卸载及外围blocked变化使旧catalog和完整草稿失效；blocked解除重读元数据。未确认导入按api/session/原输入在有限内存中保requestId跨dialog关闭重开，只在本实例当前合法receipt分支确认，旧卸载迟到成功不能清新实例的重放ID；不持久化原目录/credentials或将内存恢复说成整页重载恢复。应用回执核原source/pin及按variants规范化model/effort，原生无effort控件只default。中性section带公共settings-form scope，纵向container不同时用左右row；未据样式静态复核声称浏览器实测。
+
 ### 2. 白名单快照及原生差异
 
 共同流程是：限定原生来源描述或明确绝对目录；FD no-follow/owner/nlink/size/路径前后identity检查；所有必需文件的前后快照一致；最小投影写入0700/0600新根；在目标根走现有原生身份/目录核验；最后原子发布manifest。错误只有固定code/摘要，不保留raw cause、配置或输出。鉴权文件不接受链接；非秘密共享settings仅允许已有确证例外，复制结果必须regular file。
 
 - **AGY**：以已证文件来源和必要consumer认证/固定原生路由为首批，使用上述新增OAuth凭据固定合同，不把现有邮箱/未验证JWT或legacy binding提升为稳定远端principal。完整独立child HOME，Native自行新建的sessions/cache/locks自然落到该HOME；不复制来源历史。lxy共享settings例外不推广给凭据或任意链接。未知API/custom route及无法确认的keychain来源拒绝，不借原HOME验证目标成功。Native serde、token读取/刷新/写回优先级、完整settings及保护投影仍须固定版本静态证据和独立合成验证，当前reader字段不是完整白名单。
-- **MiniMax**：标准prod、明确cn/en、已核schema的state/token/generation/scopes/expiry一致，credential的可选loginEpoch跨读一致；state没有loginEpoch字段。必需材料是同一`auth/prod/{region}/mcode-public`下的auth-state与auth envelope。新root的record索引是原生`com.minimax.mcode.oauth.prod.{region}\0base64url(sha256(join(root,'auth')+'\0mcode-public'))`；只重键所选record，token/state内容不造新值，其他record/锁/刷新中状态不复制。身份cache不冒充新根远程认证；目标用现ensure流程核对。
+- **MiniMax**：标准prod、明确cn/en、已核schema的state/token/generation/scopes/expiry一致，credential的可选loginEpoch跨读一致；state没有loginEpoch字段。必需材料是同一`auth/prod/{region}/mcode-public`下的auth-state与auth envelope。新root的record索引是原生`com.minimax.mcode.oauth.prod.{region}\0base64url(sha256(join(root,'auth')+'\0mcode-public'))`；只重键所选record，token/state内容不造新值，其他record/锁/刷新中状态不复制。身份cache不冒充新根远程认证；目标须有独立的初始化/正常刷新后验及owned cleanup与新鲜principal验证，复用已有有界UID协议，但不能直接削弱legacy discover/ensure的整段epoch快照来凑目标成功。
 - **Codex**：首批仅已证file auth与默认原生路由。复制白名单auth字段，最小native config明确file store，必要安全策略等价保留，sessions/SQLite/锁不得指回原根。原生keyring/auto、未知provider/祖先项目路由继续拒绝，不能导入一份陈旧auth文件便放开。需新增scoped codexHome并贯通source/catalog/app-server/model/fork/terminal。
 
 MiniMax的厂商材料证明与通用文件观察分开：`withNativeAuthSnapshot`仅在受管Linux/x64 helper及FS/ABI全部核验时支持，其余情况明确不支持；`observeNativeAuthFiles`的verified:false不是发布授权。首个厂商合同仅覆盖已核0.6.12标准prod/file namespace的原生协同写者：auth/state写入均wx临时文件、fsync后rename，持有所有旧FD至目标核验/最终源复核结束，原生同字节写回仍换inode，不能用粗粒度时间戳或watch队列代替它。先核state/auth/state/auth完整选中材料及namespace/client/audience/generation/scopes/expiry；loginEpoch只在credential中，要求credential跨读一致，不虚构state字段。原生login取消rollback或失败refresh说明generation不是无条件全局单调，不能把principal相同或单一计数当快照证明。已核原生只有nativeNamespace/credentialKey等本地材料寻址，没有名为sourceBinding的原生字段；插件自己的fingerprint/epoch不是原生提交ID或远程grant。
@@ -77,7 +100,7 @@ guard期间的目标Native工作须受剩余期限与guard.signal约束，并由
 
 ### 4. 工具与UI的同一服务边界
 
-拟增只读`cliworker_auth_profiles`列caps/已核来源描述/安全profiles；`cliworker_import_auth`接收CLI、source_id或source_home、label、request ID及可选同身份替换CAS；`cliworker_manage_auth`仅做带版本检查的label/enabled管理，不销毁历史。导入/管理必须先过main/writable/not-plan门禁，公共Gateway复用同一服务。
+管理源码已增只读`cliworker_auth_profiles`列caps/已核来源描述/安全profiles；MiniMax `cliworker_auth_import`接收closed CLI、source_home、region、label、request ID及可选同身份替换CAS；`cliworker_auth_manage`仅做带版本检查的label/enabled管理，不销毁历史。其它CLI/source_id不据此冒实现。导入/管理必须先过main/writable/not-plan门禁，公共Gateway复用同一服务。
 
 models/start/configure_conversation增加auth_profile；Worker selector/followup/configureWorker/fork从固定版本读取，没有换号参数。agy_account只保留legacy用法，与auth_profile双选拒绝。不存在的wrapper映射不解析为可执行程序，Canonical CLI executable仍单独验证。
 

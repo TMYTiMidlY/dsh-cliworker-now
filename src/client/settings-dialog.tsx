@@ -26,6 +26,7 @@ import { BrandIcon, Glyph } from './icons.tsx'
 import { operationMessage } from './operation-error.ts'
 import { value, type API } from './workers.ts'
 import { RolePresetsPane } from './role-presets.tsx'
+import { NativeAuthProfiles } from './native-auth-profiles.tsx'
 import { ConcurrencySettingsPane } from './concurrency-settings.tsx'
 import { AccountQueryQueue } from './account-query-queue.ts'
 import { CliExecutableSettings } from './cli-executable-settings.tsx'
@@ -578,6 +579,7 @@ function CliSettings({
   const [accountSource, setAccountSource] = useState<AccountSource>()
   const [loginProvider, setLoginProvider] = useState<ZCodeLoginProvider>()
   const [pathChanging, setPathChanging] = useState(false)
+  const [profileBusy, setProfileBusy] = useState(false)
   const selection = useRef({ model: '', effort: 'default' as Preference['effort'] })
   useEffect(() => {
     const update = () => setWriteState(preferenceSaves.snapshot(cli))
@@ -668,7 +670,7 @@ function CliSettings({
   const settingsPending = enabled === undefined && !settingsError
   const accountLoading = !settingsError && enabled !== false && (!account || account.loading)
   const supportedEfforts = catalog?.models.find((item) => item.id === model)?.efforts ?? []
-  const choiceDisabled = inactive || pathChanging || modelLoading || accountLoading || !!action || !catalog
+  const choiceDisabled = inactive || profileBusy || pathChanging || modelLoading || accountLoading || !!action || !catalog
   function savePreference(preference: Preference) {
     preferenceSaves.stage(preference, async (next, signal) => {
       const saved = JSON.parse(value(await api.cliworker.configure(sessionId, JSON.stringify(next), signal)))
@@ -741,7 +743,7 @@ function CliSettings({
         }
         aria-label={label}
         disabled={
-          inactive ||
+          inactive || profileBusy ||
           accountLoading ||
           !!account?.error ||
           !!action ||
@@ -811,7 +813,7 @@ function CliSettings({
             checked={enabled ?? false}
             onChange={onToggle}
             label={`启用 ${CLI_LABELS[cli]}`}
-            disabled={enabled === undefined || toggleBusy || saving || !!action || pathChanging}
+            disabled={enabled === undefined || toggleBusy || saving || !!action || pathChanging || profileBusy}
             title={action ? '请先关闭账号终端' : undefined}
           />
         </div>
@@ -909,6 +911,7 @@ function CliSettings({
           </Modal>
         )}
       </section>
+      {cli === 'minimax' && <NativeAuthProfiles key={sessionId} api={api} sessionId={sessionId} blocked={inactive || !!action || pathChanging || saving} onBusyChange={setProfileBusy} />}
       <section className="cwn-settings-section" aria-label="项目默认设置">
         <div className="cwn-settings-section-head">
           <h3>项目默认设置</h3>

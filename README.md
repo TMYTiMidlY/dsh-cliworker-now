@@ -80,6 +80,13 @@ MiniMax Code 与 MiMo 独立，支持 `mmx` / `mcode` / `minimax` / `minimax cod
 
 MiniMax 配置绑定按完整内容而非 inode 标识来源；安全同内容原子保存可保持账号绑定，操作内另有有界私有版本检测原地触碰或已观测的内容变化。凭据、认证状态和身份缓存仍保留完整文件戳校验。仅最终快照不能证明原子写入者，也不能完整检测未观测的 atomic A→B→A；本功能候选不宣称完整文件事件溯源，仍待父会话真实验收。
 
+**独立账号导入（MiniMax 源码候选，尚待实机和现 GUI 验收）**：已接通私有存储、正式管理工具/Gateway、固定版本任务来源及设置控件，不代表已部署或所有平台可用。当前导入仅支持 Linux/x64、已证 0.6.12 标准 prod cn/en 文件登录；macOS/Windows 安全存储与其他 CLI 导入未开放，既有原生默认登录路径不受影响。
+
+- 只导入登录及支持的必要连接、隐私和权限设置，不读取/复制业务智能体、提示、工作目录或历史，不修改原账号；新档案不是原业务环境克隆。来源须仍满足有效性/私有文件/格式门槛，不能靠旧缓存或过期令牌恢复认证。
+- 设置中的“独立导入账号”显式导入、改名/停用；“当前对话的新任务账号”先核所选来源模型，再完整选择模型/强度并显式应用。仅影响当前主会话之后的新 Worker，不改项目原生默认或已有会话；已保存不等于已登录/有模型权限。
+- Agent 使用 `cliworker_auth_profiles`、`cliworker_auth_import`、`cliworker_auth_manage`；MiniMax 的 `models/start/configure_conversation` 可传 `auth_profile` ID，`native` 明确返回原生来源。旧 Worker 按其 ID 使用原固定材料，不能覆盖账号；没有同域完整设定仍需明确 model，不借其他账号的角色或权限。
+- 无需 dsh-provider-hub。Hub 与额度只是后续可选能力；本地独立副本不保证服务端账号/grant/refresh family 独立，验证失败也可能影响远端续期，不自动换号或重试业务。准确证据与未完成项见[实施记录](doc/tasks.md)及[MiniMax 合同](openspec/changes/add-native-auth-profiles/minimax-native-contract.md)。
+
 - **系统**：macOS / Windows。外部 CLI 需安装对应系统的原生版本，并完成该 CLI 自己的登录或 API 配置。
 - **宿主**：DeepSeek Harness（当前随包资源基于 0.2.1-rc.2）；Node.js ≥ 22.19.0。
 - **验证范围**：每个 CLI 的实测版本、已通过和未验证的部分见 [使用细节与 CLI 说明](doc/usage-details.md#42-支持范围与验证边界) 和 [实际验证记录](doc/tasks.md)。能列出模型不代表一定有调用权限。

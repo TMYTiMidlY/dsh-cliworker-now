@@ -15,6 +15,7 @@ vi.mock('../src/host/cli-account-binding.ts', () => ({ readCliAccountBinding: vi
 vi.mock('../src/host/adapters.ts', async original => ({ ...await original<object>(), catalogFor: vi.fn() }))
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => { for (const fn of cleanups.splice(0).reverse()) await fn(); vi.restoreAllMocks(); vi.clearAllMocks() })
+const profilePin = { id: 'ap_11111111-1111-4111-8111-111111111111', materialRevision: 'm_22222222-2222-4222-8222-222222222222' }
 const catalog: Catalog = { cli: 'antigravity', notice: 'Synthetic models, not remote entitlement', models: [
   { id: 'SYNTHETIC_ARGON', label: 'Synthetic Argon', efforts: ['default'] },
   { id: 'SYNTHETIC_OPUS', label: 'Synthetic Opus', efforts: ['default', 'high'], variants: { default: 'SYNTHETIC_OPUS', high: 'SYNTHETIC_OPUS-high' } },
@@ -487,4 +488,155 @@ it('conversation changes refuse stale account, missing strength, Host policy and
   await expect(f.execute('configure_conversation', { worker_id: undefined, cli: 'agy', model: 'SYNTHETIC_OPUS' })).rejects.toThrow()
   expect(f.storage.conversationSetup(f.agent.id, f.project, 'antigravity')).toEqual(confirmed)
   expect(f.jobs).toHaveLength(0); expect(f.calls).toHaveLength(0)
+})
+
+// New source selection uses the ACTUAL Tool/Host/storage path but a synthetic
+// authorized profile facade. No real Native/account/model is exercised here.
+function profileSetup() {
+  const f = setup(), root = '/SYNTHETIC_PRIVATE_PROFILE'
+  vi.mocked(catalogFor).mockResolvedValue({ ...catalog, cli: 'minimax' })
+  const profiles = { list: vi.fn(() => [{ ...profilePin, cli: 'minimax', label: 'Synthetic profile', recordRevision: 1, enabled: true, state: 'available' }]), select: vi.fn((id: string) => { if (id !== profilePin.id) throw new Error('AUTH_NOT_FOUND'); return Object.freeze({ ...profilePin }) }),
+    run: vi.fn(async (pin: any, _executable: string, operation: any, signal: AbortSignal) => operation({ pin, config: Object.freeze({ ...DEFAULT_CONFIG, minimaxHome: root, minimaxRegion: 'cn', minimaxExpectedConfigDigest: 'a'.repeat(64) }), signal })) }
+  ;(f.service as any).nativeProfiles = profiles
+  ;(f.service as any).ctx.agents.get = (id: string) => id === f.agent.id ? f.agent : f.nativeChildren.get(id)
+  const launch = vi.spyOn(f.service as any, 'launch').mockResolvedValue('{"syntheticLaunchOnly":true}')
+  return { ...f, profiles, launch, root }
+}
+it('profile models query scopes the whole catalog without establishing or changing any setup', async () => {
+  const f = profileSetup()
+  await f.execute('models', { worker_id: undefined, cli: 'minimax', auth_profile: profilePin.id })
+  expect(f.profiles.run).toHaveBeenCalledTimes(1)
+  expect(vi.mocked(catalogFor).mock.calls.every(row => row[2].minimaxHome === f.root)).toBe(true)
+  expect(f.storage.conversationSetup(f.agent.id, f.project, 'minimax')).toBeUndefined(); expect(f.launch).not.toHaveBeenCalled()
+})
+it('explicit profile cannot borrow a same-model complete native setup or role', async () => {
+  const f = profileSetup(), native = { preference: { cli: 'minimax' as const, model: 'SYNTHETIC_ARGON', effort: 'default' as const }, role: { name: 'Synthetic native role', summary: 'Synthetic', prompt: 'SYNTHETIC_NATIVE_ROLE' }, binding: 'SYNTHETIC_ACCOUNT' }
+  f.storage.setDispatchSetup(f.project, native)
+  await expect(f.execute('start', { cli: 'minimax', title: 'Profile', prompt: 'SYNTHETIC_PROMPT', auth_profile: profilePin.id })).rejects.toThrow('MODEL_REQUIRED')
+  expect(f.launch).not.toHaveBeenCalled(); expect(f.profiles.run).not.toHaveBeenCalled()
+})
+it('profile first selection persists the fixed revision and does not replace native project defaults', async () => {
+  const f = profileSetup(), native = { preference: { cli: 'minimax' as const, model: 'SYNTHETIC_ARGON', effort: 'default' as const }, role: null, binding: 'SYNTHETIC_ACCOUNT' }
+  f.storage.setDispatchSetup(f.project, native)
+  await f.execute('start', { cli: 'minimax', title: 'Profile', prompt: 'SYNTHETIC_PROMPT', auth_profile: profilePin.id, model: 'SYNTHETIC_ARGON', effort: 'default', role: 'none' })
+  expect(f.launch.mock.calls[0][3]).toMatchObject({ authProfile: profilePin })
+  expect(f.storage.conversationSetup(f.agent.id, f.project, 'minimax')?.preference.authProfile).toEqual(profilePin)
+  expect(f.storage.dispatchSetup(f.project, 'minimax')).toEqual(native)
+  expect(f.storage.dispatchSetup(f.project, 'minimax', profilePin)?.preference.authProfile).toEqual(profilePin)
+})
+it('explicit native selection returns to its own domain while omission reuses the current complete profile', async () => {
+  const f = profileSetup()
+  const start = (auth_profile?: string, model?: string) => f.execute('start', { cli: 'minimax', title: 'Select', prompt: 'SYNTHETIC_PROMPT', auth_profile, model, effort: 'default', role: 'none' })
+  await start('native', 'SYNTHETIC_ARGON'); await start(profilePin.id, 'SYNTHETIC_ARGON'); await start()
+  expect(f.launch.mock.calls.at(-1)?.[3]).toMatchObject({ authProfile: profilePin })
+  await start('native')
+  expect(f.launch.mock.calls.at(-1)?.[3].authProfile).toBeUndefined()
+})
+it('worker selector refuses a profile override before reading a new source', async () => {
+  const f = profileSetup()
+  await expect(f.execute('models', { worker_id: f.worker.id, auth_profile: profilePin.id })).rejects.toThrow()
+  expect(f.profiles.run).not.toHaveBeenCalled(); expect(f.profiles.select).not.toHaveBeenCalled()
+})
+it('profile-aware conversation model changes preserve its original role and source domain', async () => {
+  const f = profileSetup()
+  await f.execute('start', { cli: 'minimax', title: 'Select', prompt: 'SYNTHETIC_PROMPT', auth_profile: profilePin.id, model: 'SYNTHETIC_ARGON', effort: 'default', role: 'none' })
+  await f.execute('configure_conversation', { cli: 'minimax', auth_profile: profilePin.id, model: 'SYNTHETIC_OPUS', effort: 'high' })
+  const current = f.storage.conversationSetup(f.agent.id, f.project, 'minimax', profilePin)!
+  expect(current.preference).toMatchObject({ authProfile: profilePin, model: 'SYNTHETIC_OPUS-high', effort: 'high' }); expect(current.role).toBeNull()
+})
+it('profile Worker model configuration derives its fixed source from Worker ID, never a new selector', async () => {
+  const f = profileSetup(), worker = { ...f.worker, preference: { cli: 'minimax' as const, model: 'SYNTHETIC_ARGON', effort: 'default' as const, authProfile: profilePin }, transport: 'minimax-acp-v1' as const, mode: 'accept-edits' as const }
+  f.storage.save(worker)
+  const result = JSON.parse(await f.service.configureWorker(f.agent.id, worker.id, JSON.stringify({ cli: 'minimax', model: 'SYNTHETIC_OPUS', effort: 'high' }), f.control.signal))
+  expect(result.preference).toMatchObject({ authProfile: profilePin, model: 'SYNTHETIC_OPUS-high' })
+  const before = f.profiles.run.mock.calls.length
+  await expect(f.service.configureWorker(f.agent.id, worker.id, JSON.stringify({ cli: 'minimax', model: 'SYNTHETIC_ARGON', effort: 'default', authProfile: { ...profilePin, materialRevision: 'm_33333333-3333-4333-8333-333333333333' } }), f.control.signal)).rejects.toThrow('账号')
+  expect(f.profiles.run).toHaveBeenCalledTimes(before)
+})
+it('native-default configure rejects a profile before discovery and cannot contaminate its complete role/setup bucket', async () => {
+  const f = profileSetup(), native = { preference: { cli: 'minimax' as const, model: 'SYNTHETIC_ARGON', effort: 'default' as const }, role: { name: 'Synthetic native role', summary: 'Synthetic', prompt: 'SYNTHETIC_NATIVE_ROLE' }, binding: 'SYNTHETIC_ACCOUNT' }
+  f.storage.setDispatchSetup(f.project, native)
+  await expect(f.service.configure(f.agent.id, JSON.stringify({ ...native.preference, authProfile: profilePin }), f.control.signal)).rejects.toThrow('原生默认')
+  expect(f.profiles.run).not.toHaveBeenCalled(); expect(f.storage.dispatchSetup(f.project, 'minimax')).toEqual(native)
+  expect(() => f.storage.setPreference(f.project, { ...native.preference, authProfile: profilePin })).toThrow('原生默认')
+  expect(f.storage.dispatchSetup(f.project, 'minimax')).toEqual(native)
+})
+it('profile task settings Gateway applies one fully checked parent-only source/model combination', async () => {
+  const f = profileSetup(), native = { preference: { cli: 'minimax' as const, model: 'SYNTHETIC_ARGON', effort: 'default' as const }, role: null, binding: 'SYNTHETIC_ACCOUNT' }
+  f.storage.setDispatchSetup(f.project, native)
+  const catalog = JSON.parse(await f.service.authTaskCatalog(f.agent.id, profilePin.id, f.control.signal))
+  expect(catalog.pin).toEqual(profilePin); expect(catalog.catalog.models).toHaveLength(2)
+  expect(f.storage.conversationSetup(f.agent.id, f.project, 'minimax')).toBeUndefined()
+  const selected = { source: profilePin.id, preference: { cli: 'minimax', authProfile: catalog.pin, model: 'SYNTHETIC_OPUS', effort: 'high' } }
+  const applied = JSON.parse(await f.service.authTaskApply(f.agent.id, JSON.stringify(selected), f.control.signal))
+  expect(applied.preference).toMatchObject({ authProfile: profilePin, model: 'SYNTHETIC_OPUS-high' })
+  expect(f.storage.conversationSetup(f.agent.id, f.project, 'minimax')?.preference).toEqual(applied.preference)
+  expect(f.storage.dispatchSetup(f.project, 'minimax')).toEqual(native); expect(f.storage.conversationSetup('OTHER_SYNTHETIC_PARENT', f.project, 'minimax')).toBeUndefined()
+  expect(f.launch).not.toHaveBeenCalled()
+})
+it('task-source Gateway rejects incomplete/forged selection and stale displayed proof without changing defaults', async () => {
+  const f = profileSetup()
+  await f.service.authTaskCatalog(f.agent.id, profilePin.id, f.control.signal)
+  const request = { source: profilePin.id, preference: { cli: 'minimax', authProfile: profilePin, model: 'SYNTHETIC_ARGON', effort: 'default' } }
+  for (const patch of [{ source: 'native' }, { root: '/SYNTHETIC_FORGED' }, { preference: { ...request.preference, authProfile: { id: profilePin.id } } }])
+    await expect(f.service.authTaskApply(f.agent.id, JSON.stringify({ ...request, ...patch }), f.control.signal)).rejects.toThrow()
+  vi.mocked(readCliAccountBinding).mockResolvedValue('SYNTHETIC_CHANGED')
+  await expect(f.service.authTaskApply(f.agent.id, JSON.stringify(request), f.control.signal)).rejects.toThrow()
+  expect(f.storage.conversationSetup(f.agent.id, f.project, 'minimax')).toBeUndefined(); expect(f.launch).not.toHaveBeenCalled()
+})
+it('queued task-source apply rejects a changed project before any new signed metadata operation', async () => {
+  const f = profileSetup(); await f.service.authTaskCatalog(f.agent.id, profilePin.id, f.control.signal)
+  let release!: () => void, entered!: () => void
+  const ready = new Promise<void>(ok => { entered = ok }), gate = new Promise<void>(ok => { release = ok })
+  const holding = f.service.withDispatchSetup(f.agent, f.control.signal, 'minimax', async () => { entered(); await gate })
+  await ready
+  const request = JSON.stringify({ source: profilePin.id, preference: { cli: 'minimax', authProfile: profilePin, model: 'SYNTHETIC_ARGON', effort: 'default' } })
+  const applying = f.service.authTaskApply(f.agent.id, request, f.control.signal); void applying.catch(() => {})
+  await Promise.resolve(); await Promise.resolve()
+  const before = f.profiles.run.mock.calls.length, other = join(f.project, 'other-synthetic-project'); mkdirSync(other, { mode: 0o700 })
+  f.agent.session.header.cwd = other; release(); await holding
+  await expect(applying).rejects.toThrow()
+  expect(f.profiles.run).toHaveBeenCalledTimes(before)
+  expect(f.storage.conversationSetup(f.agent.id, f.project, 'minimax')).toBeUndefined(); expect(f.storage.conversationSetup(f.agent.id, other, 'minimax')).toBeUndefined()
+})
+it.each(['catalog', 'apply'])('task-source %s cannot publish a late result after its parent Agent instance is replaced', async operation => {
+  const f = profileSetup(); (f.service as any).ctx.agents.get = () => f.agent
+  if (operation === 'apply') await f.service.authTaskCatalog(f.agent.id, profilePin.id, f.control.signal)
+  let release!: () => void, entered!: () => void
+  const ready = new Promise<void>(ok => { entered = ok }), gate = new Promise<void>(ok => { release = ok })
+  vi.mocked(catalogFor).mockImplementationOnce(async () => { entered(); await gate; return { ...catalog, cli: 'minimax' } })
+  const promise = operation === 'catalog' ? f.service.authTaskCatalog(f.agent.id, profilePin.id, f.control.signal)
+    : f.service.authTaskApply(f.agent.id, JSON.stringify({ source: profilePin.id, preference: { cli: 'minimax', authProfile: profilePin, model: 'SYNTHETIC_ARGON', effort: 'default' } }), f.control.signal)
+  void promise.catch(() => {}); await ready
+  ;(f.service as any).ctx.agents.get = () => ({ ...f.agent })
+  release(); await expect(promise).rejects.toThrow('主会话')
+  expect(f.storage.conversationSetup(f.agent.id, f.project, 'minimax')).toBeUndefined()
+  if (operation === 'catalog') expect((f.service as any).profileTaskProofs?.size ?? 0).toBe(0)
+})
+it('task-source metadata remains registration-only and reports current read-only capability without touching Native', async () => {
+  const f = profileSetup(); f.plan(true)
+  const result = JSON.parse(await f.service.authTaskSettings(f.agent.id, f.control.signal))
+  expect(result.writable).toBe(false); expect(result.validation).toBe('registered-not-live-checked'); expect(result.current).toBeNull()
+  expect(f.profiles.run).not.toHaveBeenCalled(); expect(catalogFor).not.toHaveBeenCalled(); expect(f.launch).not.toHaveBeenCalled()
+  expect(JSON.stringify(result)).not.toContain(f.root)
+})
+it.each(['plan', 'cancel'])('task-source apply rechecks %s after a deferred fresh catalog before saving', async change => {
+  const f = profileSetup(); await f.service.authTaskCatalog(f.agent.id, profilePin.id, f.control.signal)
+  let release!: () => void, entered!: () => void
+  const ready = new Promise<void>(ok => { entered = ok }), gate = new Promise<void>(ok => { release = ok })
+  vi.mocked(catalogFor).mockImplementationOnce(async () => { entered(); await gate; return { ...catalog, cli: 'minimax' } })
+  const promise = f.service.authTaskApply(f.agent.id, JSON.stringify({ source: profilePin.id, preference: { cli: 'minimax', authProfile: profilePin, model: 'SYNTHETIC_ARGON', effort: 'default' } }), f.control.signal)
+  void promise.catch(() => {}); await ready
+  if (change === 'plan') f.plan(true); else f.control.abort(new Error('SYNTHETIC_CANCELLED_AFTER_CATALOG'))
+  release(); await expect(promise).rejects.toThrow()
+  expect(f.storage.conversationSetup(f.agent.id, f.project, 'minimax')).toBeUndefined(); expect(f.storage.preference(f.project, 'minimax')).toBeUndefined()
+})
+it('task-source Gateway respects plan and native return without contaminating imported-role domains', async () => {
+  const f = profileSetup()
+  await f.service.authTaskCatalog(f.agent.id, 'native', f.control.signal)
+  const request = JSON.stringify({ source: 'native', preference: { cli: 'minimax', model: 'SYNTHETIC_ARGON', effort: 'default' } })
+  f.plan(true); await expect(f.service.authTaskApply(f.agent.id, request, f.control.signal)).rejects.toThrow('规划')
+  f.plan(false); const result = JSON.parse(await f.service.authTaskApply(f.agent.id, request, f.control.signal))
+  expect(result.preference.authProfile).toBeUndefined(); expect(f.storage.conversationSetup(f.agent.id, f.project, 'minimax')?.role).toBeNull()
+  expect(f.storage.preference(f.project, 'minimax')).toBeUndefined(); expect(f.launch).not.toHaveBeenCalled()
 })
